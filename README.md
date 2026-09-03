@@ -28,5 +28,4 @@ npm run build:linux    # AppImage + .deb
 
 - **[bol-van/zapret](https://github.com/bol-van/zapret)** — сам движок zapret, спасибо за столь хороший инструмент
 - **[Flowseal/zapret-discord-youtube](https://github.com/Flowseal/zapret-discord-youtube)** —
-  списки сайтов (`resources/zapret/lists/`) и fake-пакеты (`resources/zapret/fakes/`). (`FLOWSEAL_COMMIT`), лицензия —
-  `LICENSE.flowseal.txt`.
+  списки сайтов (`resources/zapret/lists/`) и fake-пакеты (`resources/zapret/fakes/`).
