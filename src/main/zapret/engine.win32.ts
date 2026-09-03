@@ -1,11 +1,18 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import type { ZapretStatus } from '../../shared/ipc-contract'
 import { ZapretEngine } from './engine'
-import { assertExecutable, protectedWinwsPath, serviceConfigPath, winwsPath } from './paths'
+import {
+  SERVICE_BINARY_NAMES,
+  assertExecutable,
+  serviceDataDir,
+  serviceConfigPath,
+  winwsPath
+} from './paths'
 import {
   applyServiceConfig,
   queryService,
@@ -28,18 +35,34 @@ async function readInstalledMarkerLine(): Promise<string | null> {
   }
 }
 
+async function sha256(path: string): Promise<string> {
+  return createHash('sha256')
+    .update(await readFile(path))
+    .digest('hex')
+}
+
 /**
- * Служба всегда запускает защищённую копию winws.exe (protectedWinwsPath), а не оригинал
- * из папки установки приложения (winwsPath) — значит переустановку/обновление приложения
- * по самому пути службы не отследить, как раньше. Вместо этого сравниваем размер и время
- * изменения оригинала с уже скопированным файлом: разошлись — обновление zapret вышло
- * позже последней копии, нужно копировать заново (а значит и UAC).
+ * Служба запускает защищённую копию бинарников, а не оригинал из папки приложения — значит
+ * обновление по самому пути службы не отследить. Сравниваем содержимое: время изменения тут
+ * не годится совсем, `scripts/fetch-zapret.mjs` кладёт файлы через `copyFile`, а тот ставит
+ * текущее время — после каждой сборки CI mtime новее, хотя версия zapret запинована и байты
+ * те же. По mtime мы на ровном месте требовали UAC при каждом обновлении приложения и лезли
+ * копировать поверх WinDivert64.sys, ещё загруженного в ядро.
  */
 async function binariesNeedCopy(): Promise<boolean> {
+  const sourceDir = dirname(winwsPath())
+  const targetDir = serviceDataDir()
   try {
-    const [source, copy] = await Promise.all([stat(winwsPath()), stat(protectedWinwsPath())])
-    return source.size !== copy.size || source.mtimeMs > copy.mtimeMs
+    for (const name of SERVICE_BINARY_NAMES) {
+      const [source, copy] = await Promise.all([
+        sha256(join(sourceDir, name)),
+        sha256(join(targetDir, name))
+      ])
+      if (source !== copy) return true
+    }
+    return false
   } catch {
+    // Какого-то файла ещё нет (первая установка) или он нечитаем — надёжнее скопировать.
     return true
   }
 }

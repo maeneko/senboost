@@ -10,7 +10,7 @@ import {
   isElevated,
   runElevatedServiceTask
 } from './elevated-task.win32'
-import { serviceConfigPath, serviceDataDir, winwsPath } from './paths'
+import { SERVICE_BINARY_NAMES, serviceConfigPath, serviceDataDir, winwsPath } from './paths'
 
 const run = promisify(execFile)
 
@@ -31,6 +31,8 @@ const ERROR_SERVICE_ALREADY_RUNNING = 1056
 const ERROR_SERVICE_NOT_ACTIVE = 1062
 
 export type ServiceState = 'Running' | 'Stopped' | 'StartPending' | 'StopPending' | 'Other'
+/** То, чего можно дождаться от службы. `Absent` — службы в системе нет (снята). */
+type WaitState = 'Running' | 'Stopped' | 'Absent'
 export type ServiceStartMode = 'Auto' | 'Manual' | 'Disabled' | 'Other'
 
 export interface ServiceInfo {
@@ -38,10 +40,6 @@ export interface ServiceInfo {
   startMode: ServiceStartMode
   /** Значение `PathName` из CIM — то, что реально прописано в `binPath` службы. */
   binPath: string
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 function exitCodeOf(error: unknown): number {
@@ -81,12 +79,29 @@ function normalizeStartMode(raw: string | undefined): ServiceStartMode {
  * Опрос через `Get-CimInstance Win32_Service`, а не парсинг вывода `sc query` — у CIM
  * `State`/`StartMode` это английские константы независимо от языка Windows, а `sc` печатает
  * локализованный текст, который парсить надёжно нельзя.
+ *
+ * Ждём тоже здесь, внутри одного скрипта: запуск powershell.exe стоит около секунды (он
+ * поднимает .NET), а опросов до перехода службы в нужное состояние бывает с десяток. Раньше
+ * каждый опрос был отдельным процессом, и включение обхода складывалось в основном из этих
+ * запусков; теперь на всё ожидание приходится один. Сам опрос внутри CIM — десятки мс.
  */
-export async function queryService(): Promise<ServiceInfo | null> {
-  const script =
-    `Get-CimInstance Win32_Service -Filter "Name='${SERVICE_NAME}'" | ` +
-    'Select-Object State,StartMode,PathName | ConvertTo-Json -Compress'
+function queryScript(until: readonly WaitState[], timeoutMs: number): string {
+  return `
+$targets = @(${until.map((state) => `'${state}'`).join(',')})
+$deadline = [DateTime]::UtcNow.AddMilliseconds(${timeoutMs})
+for (;;) {
+  $svc = Get-CimInstance Win32_Service -Filter "Name='${SERVICE_NAME}'" |
+    Select-Object State,StartMode,PathName
+  $state = if ($svc) { $svc.State } else { 'Absent' }
+  if ($targets.Count -eq 0 -or $targets -contains $state) { break }
+  if ([DateTime]::UtcNow -ge $deadline) { break }
+  Start-Sleep -Milliseconds ${POLL_INTERVAL_MS}
+}
+if ($svc) { $svc | ConvertTo-Json -Compress } else { 'null' }
+`
+}
 
+async function runQuery(script: string): Promise<ServiceInfo | null> {
   let stdout: string
   try {
     ;({ stdout } = await run('powershell.exe', ['-NoProfile', '-Command', script]))
@@ -108,6 +123,19 @@ export async function queryService(): Promise<ServiceInfo | null> {
   }
 }
 
+/** Текущее состояние службы; `null` — службы в системе нет. */
+export function queryService(): Promise<ServiceInfo | null> {
+  return runQuery(queryScript([], 0))
+}
+
+/**
+ * Ждёт одного из состояний и возвращает последнее увиденное — в том числе по таймауту,
+ * поэтому результат у вызывающего кода обязателен к проверке.
+ */
+function waitForService(...states: WaitState[]): Promise<ServiceInfo | null> {
+  return runQuery(queryScript(states, POLL_TIMEOUT_MS))
+}
+
 function explainScError(error: unknown, verb: string): string {
   const message = error instanceof Error ? error.message : String(error)
   if (/access is denied/i.test(message)) {
@@ -117,18 +145,6 @@ function explainScError(error: unknown, verb: string): string {
     )
   }
   return `Не удалось ${verb} службу: ${message}`
-}
-
-async function pollUntil(
-  predicate: (info: ServiceInfo | null) => boolean
-): Promise<ServiceInfo | null> {
-  const deadline = Date.now() + POLL_TIMEOUT_MS
-  for (;;) {
-    const info = await queryService()
-    if (predicate(info)) return info
-    if (Date.now() >= deadline) return info
-    await sleep(POLL_INTERVAL_MS)
-  }
 }
 
 /**
@@ -147,7 +163,7 @@ export async function startService(): Promise<ServiceInfo | null> {
     }
   }
 
-  const info = await pollUntil((i) => i?.state === 'Running' || i?.state === 'Stopped')
+  const info = await waitForService('Running', 'Stopped')
   if (info?.state !== 'Running') {
     throw new Error(
       `Служба запущена системой, но не перешла в рабочее состояние (текущее: ` +
@@ -169,12 +185,11 @@ export async function stopService(): Promise<ServiceInfo | null> {
       throw new Error(explainScError(error, 'остановить'), { cause: error })
     }
   }
-  // `pollUntil` возвращает последнее состояние и по истечении таймаута, независимо от предиката,
-  // поэтому результат обязательно проверяем. Иначе «остановка», не уложившаяся в POLL_TIMEOUT_MS,
-  // молча сходила бы за успешную — и вызывающий код (перенастройка стратегии в engine.win32.ts)
+  // Результат обязательно проверяем: «остановка», не уложившаяся в POLL_TIMEOUT_MS, иначе
+  // молча сошла бы за успешную — и вызывающий код (перенастройка стратегии в engine.win32.ts)
   // пошёл бы копировать winws.exe поверх ещё работающего, ровно в ту ошибку, от которой
   // остановка и защищает.
-  const info = await pollUntil((i) => i === null || i.state === 'Stopped')
+  const info = await waitForService('Stopped', 'Absent')
   if (info && info.state !== 'Stopped') {
     throw new Error(
       `Служба не остановилась за ${POLL_TIMEOUT_MS / 1000} с (состояние: ${info.state}).`
@@ -270,39 +285,45 @@ function Invoke-ScRaw($rawArgs) {
   return [pscustomobject]@{ ExitCode = $proc.ExitCode; Output = ("$stdout $stderr").Trim() }
 }
 
-# WinDivert64.sys — файл драйвера, загруженного в ядро: пока драйвер не выгружен, файл занят,
-# и Copy-Item поверх него падает с «Процесс не может получить доступ к файлу ... используется
-# другим процессом». SCM рапортует службе состояние Stopped, как только winws.exe отдал сигнал
-# об остановке, — выгрузка драйвера происходит уже после этого, поэтому при быстром
-# переподключении (выключил и сразу включил, сменил стратегию) перенастройка попадала ровно
-# в этот зазор.
+# WinDivert64.sys — образ драйвера, загруженного в ядро: пока драйвер не выгружен, файл
+# занят, и Copy-Item поверх него падает с «файл используется другим процессом». SCM
+# рапортует Stopped, как только winws.exe отдал сигнал, а выгрузка идёт уже после — при
+# быстром переподключении попадаем ровно в этот зазор.
 #
-# Отсюда две меры. Первая и главная: не копировать то, что не менялось, — при смене стратегии
-# бинарники те же самые, и трогать занятый .sys незачем (Copy-Item сохраняет LastWriteTime
-# источника, так что длина + время записи однозначно отличают уже скопированный файл).
-# Вторая — на случай, когда копировать действительно надо (обновление приложения принесло
-# новый zapret): ждём выгрузки драйвера повторами, а не падаем на первой же попытке.
+# Отсюда три ступени. Сравнение по ХЕШУ, а не по времени изменения: fetch-zapret.mjs кладёт
+# бинарники через copyFile, тот ставит текущее время, и после каждой сборки CI mtime новее
+# при тех же байтах — по времени мы лезли копировать занятый .sys после каждого обновления
+# приложения. Дальше короткие повторы — вдруг драйвер вот-вот выгрузится. Последняя ступень:
+# уводим занятый файл в сторону переименованием (NTFS разрешает переименовать загруженный
+# образ, хотя удалить его не даёт) и кладём новый на освободившееся имя.
 function Copy-IfChanged($source, $destination) {
-  $src = Get-Item -LiteralPath $source
   if (Test-Path -LiteralPath $destination) {
-    $dst = Get-Item -LiteralPath $destination
-    if ($dst.Length -eq $src.Length -and $dst.LastWriteTimeUtc -eq $src.LastWriteTimeUtc) { return }
+    $sourceHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
+    $copyHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $destination).Hash
+    if ($sourceHash -eq $copyHash) { return }
   }
 
-  $attempts = 20
-  for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+  for ($attempt = 1; $attempt -le 6; $attempt++) {
     try {
       Copy-Item -LiteralPath $source -Destination $destination -Force
       return
     }
     catch {
-      if ($attempt -eq $attempts) {
-        throw "Не удалось обновить $destination за 10 с: $($_.Exception.Message) Если обход только что был выключен, драйвер WinDivert ещё выгружается — повторите через несколько секунд."
-      }
       Start-Sleep -Milliseconds 500
     }
   }
+
+  try {
+    $stale = "$destination.old"
+    Remove-Item -LiteralPath $stale -Force -ErrorAction SilentlyContinue
+    Move-Item -LiteralPath $destination -Destination $stale -Force
+    Copy-Item -LiteralPath $source -Destination $destination -Force
+  }
+  catch {
+    throw "Не удалось обновить $destination : $($_.Exception.Message)"
+  }
 }
+
 
 try {
   $payload = Get-Content -Raw -Path $PayloadPath | ConvertFrom-Json
@@ -332,9 +353,14 @@ try {
       # cygwin1.dll/WinDivert.dll/WinDivert64.sys, от них он зависит при запуске.
       $sourceDir = Split-Path -Parent $payload.winwsPath
       $protectedWinws = Join-Path $dir 'winws.exe'
-      foreach ($name in @('winws.exe', 'cygwin1.dll', 'WinDivert.dll', 'WinDivert64.sys')) {
+      foreach ($name in $payload.binaryNames) {
         Copy-IfChanged (Join-Path $sourceDir $name) (Join-Path $dir $name)
       }
+
+      # Хвосты от прошлой перенастройки: тогда файл был занят загруженным драйвером, сейчас
+      # он, скорее всего, уже свободен. Не вышло — не беда, попробуем в следующий раз.
+      Get-ChildItem -LiteralPath $dir -Filter '*.old' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 
       # sc.exe читает binPath как ОДИН аргумент — значит всю строку нужно взять в одну пару
       # кавычек, а внутренние кавычки экранировать как \\" (без этого CommandLineToArgvW режет
@@ -500,6 +526,7 @@ export async function applyServiceConfig(options: ApplyServiceConfigOptions): Pr
     configPath: serviceConfigPath(),
     configBody: options.configBody,
     winwsPath: winwsPath(),
+    binaryNames: SERVICE_BINARY_NAMES,
     autoStart: options.autoStart
   })
 }

@@ -57,6 +57,19 @@ export function serviceConfigPath(): string {
 }
 
 /**
+ * Файлы, которые служба запускает из своего защищённого каталога: сам winws и всё, от чего
+ * он зависит при старте. Список нужен и `engine.win32.ts` (решить, надо ли копировать),
+ * и повышенному скрипту в `service.win32.ts` (собственно копирование) — держим его здесь,
+ * чтобы он не разъехался на две копии.
+ */
+export const SERVICE_BINARY_NAMES = [
+  'winws.exe',
+  'cygwin1.dll',
+  'WinDivert.dll',
+  'WinDivert64.sys'
+] as const
+
+/**
  * Защищённая копия `winws.exe` (+ cygwin1.dll, WinDivert.dll, WinDivert64.sys) — на неё,
  * а не на оригинал из папки установки приложения, указывает служба. Установка теперь
  * per-user (`%LocalAppData%`), эта папка доступна на запись обычному пользователю —
