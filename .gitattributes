@@ -1,0 +1,9 @@
+# Всегда LF в рабочей копии, независимо от ОС — иначе Windows-раннер CI
+# чекаутит файлы в CRLF (core.autocrlf по умолчанию), а Prettier и
+# .editorconfig ожидают LF, и format:check падает на каждом файле.
+* text=auto eol=lf
+
+# Бинарники — без какой-либо конвертации построчных окончаний.
+*.png binary
+*.icns binary
+*.ico binary
