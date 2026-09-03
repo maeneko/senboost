@@ -1,7 +1,11 @@
 import { connect as netConnect, type Socket } from 'node:net'
 import { connect as tlsConnect } from 'node:tls'
 import { net } from 'electron'
-import type { ZapretDiagnosticResult, ZapretStatus } from '../../shared/ipc-contract'
+import type {
+  ZapretDiagnosticResult,
+  ZapretDiagnosticTarget,
+  ZapretStatus
+} from '../../shared/ipc-contract'
 
 // 6 секунд не хватало: десинк с `--dpi-desync-repeats` заметно удлиняет установку соединения,
 // и медленный, но живой сайт успевал попасть в «Недоступно».
@@ -9,15 +13,8 @@ const TIMEOUT_MS = 10000
 const TARGET_PORT = 443
 const RETRY_DELAY_MS = 300
 
-interface DiagnosticTarget {
-  id: string
-  label: string
-  host: string
-}
-
 /** Сайты, которые нужно проверять в первую очередь — по просьбе пользователя. */
-const TARGETS: DiagnosticTarget[] = [
-  { id: 'instagram', label: 'Instagram', host: 'instagram.com' },
+export const DIAGNOSTIC_TARGETS: ZapretDiagnosticTarget[] = [
   { id: 'discord', label: 'Discord', host: 'discord.com' },
   { id: 'youtube', label: 'YouTube', host: 'youtube.com' }
 ]
@@ -178,12 +175,21 @@ async function withRetry(attempt: () => Promise<number>): Promise<number> {
  * остальных случаях (Windows, обход выключен, платформа не поддерживается) бьём напрямую:
  * на Windows десинк уже общесистемный через WinDivert, а без обхода тест просто показывает
  * то, что есть сейчас.
+ *
+ * Каждый сайт отдаёт свой результат в `onResult` сам по себе, не дожидаясь остальных:
+ * проверки идут параллельно и заканчиваются вразнобой (живой сайт отвечает за десятки
+ * миллисекунд, заблокированный — только по таймауту в 10 с), и общий ответ одним куском
+ * означал бы пустой экран всё это время. Промис резолвится, когда отработали все, —
+ * по нему вызывающий код понимает, что проверка закончена.
  */
-export async function runDiagnostics(status: ZapretStatus): Promise<ZapretDiagnosticResult[]> {
+export async function runDiagnostics(
+  status: ZapretStatus,
+  onResult: (result: ZapretDiagnosticResult) => void
+): Promise<void> {
   const socksMatch = status.socksAddress ? /^(.+):(\d+)$/.exec(status.socksAddress) : null
 
-  return Promise.all(
-    TARGETS.map(async (target) => {
+  await Promise.all(
+    DIAGNOSTIC_TARGETS.map(async (target) => {
       const attempt = (): Promise<number> =>
         socksMatch
           ? checkViaSocks(target.host, socksMatch[1], Number(socksMatch[2]))
@@ -191,14 +197,14 @@ export async function runDiagnostics(status: ZapretStatus): Promise<ZapretDiagno
 
       try {
         const ms = await withRetry(attempt)
-        return { ...target, ok: true, ms, error: null }
+        onResult({ ...target, ok: true, ms, error: null })
       } catch (error) {
-        return {
+        onResult({
           ...target,
           ok: false,
           ms: null,
           error: error instanceof Error ? error.message : String(error)
-        }
+        })
       }
     })
   )

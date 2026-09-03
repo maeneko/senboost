@@ -4,7 +4,7 @@ import { useZapretDiagnostics } from '../hooks/useZapretDiagnostics'
 /** Карточка обхода блокировок: статус и включение сверху, выбор стратегии и проверка соединения ниже. */
 export default function ZapretCard(): React.JSX.Element {
   const { status, strategies, start, stop, setStrategy, busy } = useZapret()
-  const { results, running: testing, run: runTest } = useZapretDiagnostics()
+  const { targets, results, running: testing, run: runTest } = useZapretDiagnostics()
 
   const running = status?.state === 'running' || status?.state === 'starting'
   const strategyId = status?.strategyId ?? strategies[0]?.id
@@ -79,23 +79,32 @@ export default function ZapretCard(): React.JSX.Element {
         {testing ? 'Проверяю…' : 'Протестить'}
       </button>
 
-      {results.length > 0 && (
+      {/* Строки появляются сразу все, ещё до первого ответа, и заполняются по мере
+          готовности — иначе список прыгал бы, дорисовываясь по одной строке. */}
+      {targets.length > 0 && (
         <div className="settings__group">
-          {results.map((result) => (
-            <div key={result.id} className="settings-row settings-row--static">
-              {/* Причину показываем текстом, а не только подсказкой при наведении:
-                  «Недоступно» само по себе не говорит, что чинить. */}
-              <span className="diagnostic__label">
-                {result.label}
-                {!result.ok && result.error && (
-                  <small className="diagnostic__error">{result.error}</small>
+          {targets.map((target) => {
+            const result = results[target.id]
+            return (
+              <div key={target.id} className="settings-row settings-row--static">
+                {/* Причину показываем текстом, а не только подсказкой при наведении:
+                    «Недоступно» само по себе не говорит, что чинить. */}
+                <span className="diagnostic__label">
+                  {target.label}
+                  {result && !result.ok && result.error && (
+                    <small className="diagnostic__error">{result.error}</small>
+                  )}
+                </span>
+                {result ? (
+                  <span className={`chip ${result.ok ? 'chip--success' : 'chip--error'}`}>
+                    {result.ok ? `${result.ms} мс` : 'Недоступно'}
+                  </span>
+                ) : (
+                  <span className="chip chip--neutral">Проверяю…</span>
                 )}
-              </span>
-              <span className={`chip ${result.ok ? 'chip--success' : 'chip--error'}`}>
-                {result.ok ? `${result.ms} мс` : 'Недоступно'}
-              </span>
-            </div>
-          ))}
+              </div>
+            )
+          })}
         </div>
       )}
     </section>

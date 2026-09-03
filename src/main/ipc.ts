@@ -66,7 +66,14 @@ export function registerIpcHandlers(): void {
   handle('zapret:list-reset', (_event, id) => resetZapretList(id))
   handle('zapret:auto-hostlist', () => zapretAutoHostlist())
   handle('zapret:auto-hostlist-clear', () => clearZapretAutoHostlist())
-  handle('zapret:diagnose', () => zapretDiagnostics())
+  // Результаты уходят не ответом на invoke, а событиями по мере готовности — и именно
+  // в то окно, которое просило проверку, а не всем подряд. Окно могло закрыться, пока
+  // сайт отвечал (или молчал все 10 с таймаута), — тогда показывать результат уже некому.
+  handle('zapret:diagnose', (event) =>
+    zapretDiagnostics((result) => {
+      if (!event.sender.isDestroyed()) event.sender.send('zapret:diagnostic-result', result)
+    })
+  )
 
   // Системная тема поменялась (например, пользователь включил тёмный режим в ОС) —
   // сообщаем всем открытым окнам.

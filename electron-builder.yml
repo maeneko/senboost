@@ -4,6 +4,13 @@ directories:
   buildResources: build
   output: release
 
+# releaseType: release — публиковать релиз сразу, без черновика (draft — поведение по
+# умолчанию у electron-builder). С черновиком параллельная загрузка нескольких файлов иногда
+# создаёт два черновика с одним и тем же тегом вместо одного релиза.
+publish:
+  provider: github
+  releaseType: release
+
 files:
   - '!**/.vscode/*'
   - '!src/*'

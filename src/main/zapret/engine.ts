@@ -5,6 +5,8 @@ import type {
   ZapretStatus,
   ZapretState
 } from '../../shared/ipc-contract'
+import { rememberPreferences, type AppSettings } from '../settings'
+
 /** Сколько строк вывода бинарника держим для UI. */
 const LOG_LIMIT = 200
 
@@ -29,6 +31,21 @@ export abstract class ZapretEngine {
 
   getStatus(): ZapretStatus {
     return { ...this.status }
+  }
+
+  /**
+   * Возвращает выбор пользователя из прошлого запуска (`settings.json` в userData) —
+   * вызывается из `recoverZapret()` до открытия окна. Ничего не запускает: восстанавливаем
+   * только то, что было выбрано в интерфейсе, а включает обход по-прежнему сам пользователь
+   * (или, на Windows, автозапуск службы).
+   *
+   * `null` в поле означает «не выбирали» — тогда остаётся то, что решил конструктор движка.
+   */
+  restorePreferences(settings: AppSettings): void {
+    this.patch({
+      strategyId: settings.strategyId ?? this.status.strategyId,
+      autoStart: settings.autoStart ?? this.status.autoStart
+    })
   }
 
   getLog(): ZapretLogLine[] {
@@ -67,6 +84,10 @@ export abstract class ZapretEngine {
 
   protected patch(changes: Partial<ZapretStatus>): ZapretStatus {
     this.status = { ...this.status, ...changes }
+    // Единая точка сохранения: любой путь смены стратегии или автозапуска (выбор в списке,
+    // start() с другой стратегией, подхваченное из системы состояние службы в sync())
+    // проходит через patch, так что забыть сохранить выбор здесь просто негде.
+    rememberPreferences({ strategyId: this.status.strategyId, autoStart: this.status.autoStart })
     this.broadcast('zapret:status-changed', this.status)
     return this.getStatus()
   }

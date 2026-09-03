@@ -77,14 +77,18 @@ export interface ZapretList {
   isDefault: boolean
 }
 
-/**
- * Результат проверки соединения (`src/main/zapret/diagnostics.ts`): успех — это успешный
- * TLS-хендшейк до хоста через текущий бэкенд обхода, не полноценный HTTP-запрос.
- */
-export interface ZapretDiagnosticResult {
+/** Сайт, который проверяет `src/main/zapret/diagnostics.ts`. */
+export interface ZapretDiagnosticTarget {
   id: string
   label: string
   host: string
+}
+
+/**
+ * Результат проверки одного сайта (`src/main/zapret/diagnostics.ts`): успех — это успешный
+ * TLS-хендшейк до хоста через текущий бэкенд обхода, не полноценный HTTP-запрос.
+ */
+export interface ZapretDiagnosticResult extends ZapretDiagnosticTarget {
   ok: boolean
   ms: number | null
   error: string | null
@@ -121,8 +125,14 @@ export interface IpcHandlers {
   'zapret:auto-hostlist': () => string[]
   'zapret:auto-hostlist-clear': () => void
 
-  /** Проверка соединения: успешный TLS-хендшейк до нескольких сайтов через текущий бэкенд. */
-  'zapret:diagnose': () => ZapretDiagnosticResult[]
+  /**
+   * Запустить проверку соединения и сразу вернуть список проверяемых сайтов — сами
+   * результаты приходят по одному событием `zapret:diagnostic-result`, как только будет
+   * готов каждый. Сайты проверяются параллельно и отвечают вразнобой: ждать самый
+   * медленный, чтобы показать все разом, значит держать пользователя перед пустым
+   * экраном до последнего таймаута.
+   */
+  'zapret:diagnose': () => ZapretDiagnosticTarget[]
 }
 
 export type IpcChannel = keyof IpcHandlers
@@ -132,6 +142,8 @@ export interface IpcEvents {
   'theme:changed': ThemeState
   'zapret:status-changed': ZapretStatus
   'zapret:log': ZapretLogLine
+  /** Один готовый результат запущенной через `zapret:diagnose` проверки. */
+  'zapret:diagnostic-result': ZapretDiagnosticResult
 }
 
 export type IpcEventChannel = keyof IpcEvents

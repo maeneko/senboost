@@ -6,6 +6,7 @@ import type {
   IpcHandlers,
   ThemeState,
   ZapretDiagnosticResult,
+  ZapretDiagnosticTarget,
   ZapretList,
   ZapretListId,
   ZapretLogLine,
@@ -71,7 +72,10 @@ const api = {
   getZapretAutoHostlist: (): Promise<string[]> => invoke('zapret:auto-hostlist'),
   clearZapretAutoHostlist: (): Promise<void> => invoke('zapret:auto-hostlist-clear'),
 
-  runZapretDiagnostics: (): Promise<ZapretDiagnosticResult[]> => invoke('zapret:diagnose')
+  /** Запускает проверку и отдаёт список сайтов; результаты — через `onZapretDiagnosticResult`. */
+  runZapretDiagnostics: (): Promise<ZapretDiagnosticTarget[]> => invoke('zapret:diagnose'),
+  onZapretDiagnosticResult: (listener: (result: ZapretDiagnosticResult) => void): (() => void) =>
+    subscribe('zapret:diagnostic-result', listener)
 }
 
 export type RendererApi = typeof api

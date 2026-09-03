@@ -270,6 +270,40 @@ function Invoke-ScRaw($rawArgs) {
   return [pscustomobject]@{ ExitCode = $proc.ExitCode; Output = ("$stdout $stderr").Trim() }
 }
 
+# WinDivert64.sys — файл драйвера, загруженного в ядро: пока драйвер не выгружен, файл занят,
+# и Copy-Item поверх него падает с «Процесс не может получить доступ к файлу ... используется
+# другим процессом». SCM рапортует службе состояние Stopped, как только winws.exe отдал сигнал
+# об остановке, — выгрузка драйвера происходит уже после этого, поэтому при быстром
+# переподключении (выключил и сразу включил, сменил стратегию) перенастройка попадала ровно
+# в этот зазор.
+#
+# Отсюда две меры. Первая и главная: не копировать то, что не менялось, — при смене стратегии
+# бинарники те же самые, и трогать занятый .sys незачем (Copy-Item сохраняет LastWriteTime
+# источника, так что длина + время записи однозначно отличают уже скопированный файл).
+# Вторая — на случай, когда копировать действительно надо (обновление приложения принесло
+# новый zapret): ждём выгрузки драйвера повторами, а не падаем на первой же попытке.
+function Copy-IfChanged($source, $destination) {
+  $src = Get-Item -LiteralPath $source
+  if (Test-Path -LiteralPath $destination) {
+    $dst = Get-Item -LiteralPath $destination
+    if ($dst.Length -eq $src.Length -and $dst.LastWriteTimeUtc -eq $src.LastWriteTimeUtc) { return }
+  }
+
+  $attempts = 20
+  for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+    try {
+      Copy-Item -LiteralPath $source -Destination $destination -Force
+      return
+    }
+    catch {
+      if ($attempt -eq $attempts) {
+        throw "Не удалось обновить $destination за 10 с: $($_.Exception.Message) Если обход только что был выключен, драйвер WinDivert ещё выгружается — повторите через несколько секунд."
+      }
+      Start-Sleep -Milliseconds 500
+    }
+  }
+}
+
 try {
   $payload = Get-Content -Raw -Path $PayloadPath | ConvertFrom-Json
 
@@ -299,7 +333,7 @@ try {
       $sourceDir = Split-Path -Parent $payload.winwsPath
       $protectedWinws = Join-Path $dir 'winws.exe'
       foreach ($name in @('winws.exe', 'cygwin1.dll', 'WinDivert.dll', 'WinDivert64.sys')) {
-        Copy-Item -Path (Join-Path $sourceDir $name) -Destination (Join-Path $dir $name) -Force
+        Copy-IfChanged (Join-Path $sourceDir $name) (Join-Path $dir $name)
       }
 
       # sc.exe читает binPath как ОДИН аргумент — значит всю строку нужно взять в одну пару
@@ -346,8 +380,18 @@ try {
       & sc.exe stop $ServiceName 2>$null | Out-Null
       Start-Sleep -Milliseconds 500
       & sc.exe delete $ServiceName | Out-Null
-      if (Test-Path $payload.serviceDataDir) {
-        Remove-Item -Path $payload.serviceDataDir -Recurse -Force
+      # Тот же занятый WinDivert64.sys, что и при install: сразу после остановки драйвер ещё
+      # загружен, и Remove-Item падает. Повторяем, а если так и не вышло — не проваливаем
+      # удаление: служба уже снята, а оставшиеся файлы система освободит и без нас.
+      for ($attempt = 1; $attempt -le 10; $attempt++) {
+        if (-not (Test-Path $payload.serviceDataDir)) { break }
+        try {
+          Remove-Item -Path $payload.serviceDataDir -Recurse -Force
+          break
+        }
+        catch {
+          Start-Sleep -Milliseconds 500
+        }
       }
       Write-Result $true $null
     }

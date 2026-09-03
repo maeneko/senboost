@@ -34,6 +34,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # fetch-depth: 0 — шагу «Описание релиза» ниже нужны вся история и теги,
+          # чтобы найти предыдущий vX.Y.Z и собрать список коммитов после него.
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -53,6 +57,36 @@ jobs:
       # На push в main/PR публикации нет — только упаковка и загрузка в Artifacts ниже.
       - name: Build
         run: npx --no-install electron-vite build && npx --no-install electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # electron-builder создаёт релиз с пустым описанием, поэтому список изменений
+      # дописываем сами: коммиты между предыдущим тегом vX.Y.Z и текущим.
+      - name: Описание релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          # Предыдущий тег vX.Y.Z, начиная от родителя текущего. Пусто, если релиз первый.
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          {
+            if [ -n "$PREV" ]; then
+              echo "## Изменения с $PREV"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "$PREV..$TAG"
+              echo
+              echo
+              echo "**Полный diff:** https://github.com/$GITHUB_REPOSITORY/compare/$PREV...$TAG"
+            else
+              echo "## Изменения"
+              echo
+              git log --no-merges --pretty=format:'- %s (%h)' "$TAG"
+              echo
+            fi
+          } > "$NOTES"
+          gh release edit "$TAG" --notes-file "$NOTES"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
