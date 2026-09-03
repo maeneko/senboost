@@ -1,0 +1,641 @@
+/**
+ * Дизайн-система из design.md: роли Material 3, тёплая кремовая база
+ * и прохладный фиолетовый акцент.
+ *
+ * Правила, которые тут зашиты:
+ *   • иерархия — тональностью поверхностей, а не тенями (теней нет вовсе);
+ *   • скругления только из shape-шкалы (pill / 24 / 16 / 9);
+ *   • два веса шрифта (400 и 500), sentence case, технические данные — моноширинным;
+ *   • состояния — полупрозрачный state layer поверх роли (hover 8%, focus/pressed 12%).
+ */
+
+:root {
+  /* --- Роли Material 3, светлая тема (design.md §2) --- */
+  --primary: #6a45b8;
+  --on-primary: #ffffff;
+  --primary-container: #ebddff;
+  --on-primary-container: #5a2da8;
+  --secondary-container: #ebddff;
+  --on-secondary-container: #5a2da8;
+  /* Светлый фиолетовый: только крупные элементы и иконки, под мелкий текст не годится. */
+  --accent: #a96bff;
+
+  --surface: #faf6f0;
+  --on-surface: #3a2e22;
+  --surface-container: #f0e8dd;
+  --surface-container-high: #ece2d3;
+  --surface-bright: #fdfaf6;
+
+  /* Текст: тёмно-коричневый, не чёрный и не фиолетовый (design.md §6). */
+  --on-surface-variant: #5a4a3a;
+  --text-muted: #7a6a55;
+
+  --outline: #d8cdbe;
+  --outline-variant: #ece2d3;
+
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-outline: #e6c4bc;
+  --on-error-outline: #b34a3a;
+
+  /* --- Статусные цвета, тёплый подтон (design.md §2) --- */
+  --status-success-bg: #c0dd97;
+  --status-success-fg: #2c4d0a;
+  --status-success-dot: #639922;
+  --status-neutral-bg: #e4dac9;
+  --status-neutral-fg: #7a6a55;
+  --status-neutral-dot: #a99a85;
+  --status-error-bg: #ffdad6;
+  --status-error-fg: #410002;
+  --status-error-dot: #ba1a1a;
+
+  /* --- Форма (design.md §4) --- */
+  --shape-pill: 100px;
+  --shape-card: 24px;
+  --shape-inner: 16px;
+  --shape-icon: 9px;
+
+  --font-sans: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  color-scheme: light;
+}
+
+/* Тёплый уголь, а не баклажан: тот же тёплый подтон, что у крема (design.md §7). */
+:root.dark {
+  --primary: #cbb3ff;
+  --on-primary: #381b6c;
+  --primary-container: #52389e;
+  --on-primary-container: #ebddff;
+  --secondary-container: #483a55;
+  --on-secondary-container: #ebddff;
+  --accent: #cbb3ff;
+
+  --surface: #1a1611;
+  --on-surface: #ede2d4;
+  --surface-container: #251f18;
+  --surface-container-high: #302820;
+  --surface-bright: #2b251d;
+
+  --on-surface-variant: #cfc2ae;
+  --text-muted: #b6a994;
+
+  --outline: #4d4334;
+  --outline-variant: #342c20;
+
+  --error: #ffb4ab;
+  --on-error: #5c1414;
+  --error-outline: #6e2a24;
+  --on-error-outline: #ffb4ab;
+
+  /* --- Статусные цвета, тёмная тема (design.md §7) --- */
+  --status-success-bg: #2d4413;
+  --status-success-fg: #c8e3a0;
+  --status-success-dot: #8fc24f;
+  --status-neutral-bg: #34291c;
+  --status-neutral-fg: #d0c0a4;
+  --status-neutral-dot: #b0a085;
+  --status-error-bg: #5c1414;
+  --status-error-fg: #ffb4ab;
+  --status-error-dot: #ff5449;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Контент занимает всю высоту окна — оно маленькое (400×300), пустой хвост
+   снизу иначе выглядит перекошенным. */
+#root {
+  display: flex;
+  flex-direction: column;
+}
+
+body {
+  margin: 0;
+  background: var(--surface);
+  color: var(--on-surface);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+
+/* Общее кольцо фокуса — тот же 12%-слой, что и у нажатия. */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* ---------- Контент ---------- */
+
+/* Прокрутки на уровне оболочки нет: главный экран рассчитан на то, чтобы умещаться
+   в окно целиком. Прокручиваются только настройки и редактор списка — там содержимое
+   заведомо длиннее окна (правила ниже, .settings / .list-editor). */
+.content {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  overflow: hidden;
+  /* Без этого flex-элемент не даёт себя сжать ниже размера содержимого,
+     и внутренняя прокрутка настроек не включается. */
+  min-height: 0;
+}
+
+/* Шапка приложения: вордмарк слева, версия справа (design.md, шапка drawer-панели). */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.app-header__name {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.app-header__settings {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--shape-icon);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.app-header__settings:hover {
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+  color: var(--on-surface);
+}
+
+.app-header__settings:active {
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+}
+
+/* Рабочая зона — светлее крема; разделение тональностью плюс тонкий контур. */
+.card {
+  padding: 20px;
+  background: var(--surface-bright);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--shape-card);
+}
+
+.card h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+/* ---------- Карточка обхода блокировок (design.md §4.1, «карточка VPN-сервера») ---------- */
+
+.zapret-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* Предохранитель. В обычных состояниях карточка умещается целиком и никакой полосы
+     не видно — ради этого прокрутка и убрана с .content. Но текст ошибки приходит из
+     системы и по длине не ограничен, поэтому переполнение забирает на себя карточка,
+     а не оболочка: в патологическом случае пользователь увидит полосу внутри карточки,
+     а не обрезанное содержимое. */
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Текст ошибки приходит из системы и по длине ничем не ограничен (например, вывод sc.exe).
+   Без потолка он растянул бы карточку и вытолкнул содержимое за пределы окна — а прокрутки
+   на главном экране нет, значит это было бы обрезано. Ограничиваем и прокручиваем сам блок
+   ошибки: главный экран при этом остаётся фиксированной высоты при любой длине ошибки. */
+.zapret-card .list-editor__error {
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.zapret-card__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.zapret-card__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Кнопка включения — отдельно от названия и статуса, во всю ширину карточки
+   (design.md, часть II: главное действие — заливка primary, pill). */
+.toggle-button {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: var(--shape-pill);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.toggle-button:hover {
+  background: color-mix(in srgb, var(--on-primary) 8%, var(--primary));
+}
+
+.toggle-button:active {
+  background: color-mix(in srgb, var(--on-primary) 12%, var(--primary));
+}
+
+/* Обход уже активен — приглашаем выключить менее настойчивым, тональным цветом. */
+.toggle-button--on {
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+}
+
+.toggle-button--on:hover {
+  background: color-mix(in srgb, var(--on-secondary-container) 8%, var(--secondary-container));
+}
+
+.toggle-button--on:active {
+  background: color-mix(in srgb, var(--on-secondary-container) 12%, var(--secondary-container));
+}
+
+.toggle-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Чип статуса: точка + подпись, роль зависит от состояния (design.md, статусные цвета). */
+.chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--shape-pill);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.chip::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.chip--success {
+  background: var(--status-success-bg);
+  color: var(--status-success-fg);
+}
+
+.chip--success::before {
+  background: var(--status-success-dot);
+}
+
+.chip--neutral {
+  background: var(--status-neutral-bg);
+  color: var(--status-neutral-fg);
+}
+
+.chip--neutral::before {
+  background: var(--status-neutral-dot);
+}
+
+.chip--error {
+  background: var(--status-error-bg);
+  color: var(--status-error-fg);
+}
+
+.chip--error::before {
+  background: var(--status-error-dot);
+}
+
+/* Убираемая версия чипа — список сайтов (design.md: состояние hover/active тем же слоем). */
+.chip--removable {
+  gap: 8px;
+  background: var(--surface-container-high);
+  color: var(--on-surface-variant);
+}
+
+.chip--removable::before {
+  content: none;
+}
+
+.chip__remove {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.chip__remove:hover {
+  background: color-mix(in srgb, var(--on-surface) 12%, transparent);
+}
+
+/* ---------- Настройки: стратегия + списки сайтов ---------- */
+
+/* Прокрутка живёт здесь, а не на .content: списки сайтов и настройки длиннее окна,
+   а главный экран прокручиваться не должен. */
+.settings,
+.list-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Полоса прокрутки не должна наезжать на карточки и кнопку удаления. */
+  padding-right: 4px;
+  margin-right: -4px;
+}
+
+.settings__back-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings__back {
+  padding: 4px 10px 4px 4px;
+  border: none;
+  border-radius: var(--shape-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.settings__back:hover {
+  color: var(--on-surface);
+}
+
+.settings__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.settings__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings__label {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-inner);
+  background: var(--surface-bright);
+  color: var(--on-surface);
+  font: inherit;
+}
+
+.settings__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 4px;
+  border: none;
+  border-top: 1px solid var(--outline-variant);
+  background: transparent;
+  color: var(--on-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-row:hover {
+  background: color-mix(in srgb, var(--on-surface) 4%, transparent);
+}
+
+.settings-row--static {
+  cursor: default;
+}
+
+.settings-row--static:hover {
+  background: transparent;
+}
+
+.diagnostic__label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.diagnostic__error {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.settings-row__count {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.settings-row__clear {
+  padding: 2px 10px;
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-pill);
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.settings-row__clear:hover {
+  background: color-mix(in srgb, var(--on-surface) 8%, transparent);
+}
+
+.settings__support {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.settings__support-link {
+  width: 100%;
+}
+
+.settings__support-hint {
+  align-self: stretch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.settings__version {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  text-align: left;
+}
+
+.list-editor__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.list-editor__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.list-editor__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.list-editor__add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--outline);
+  border-radius: var(--shape-inner);
+  background: var(--surface-bright);
+  color: var(--on-surface);
+  font: inherit;
+}
+
+.action--outline {
+  flex: 0 0 auto;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--primary);
+  border-radius: var(--shape-pill);
+  background: transparent;
+  color: var(--primary);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.action--outline:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* .action--outline на <a> вместо <button> — нужно вернуть центрирование текста
+   и убрать подчёркивание, которые браузер даёт ссылкам по умолчанию. */
+a.action--outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.action--outline:disabled {
+  cursor: default;
+  opacity: 0.5;
+  background: transparent;
+}
+
+.list-editor__error {
+  margin: 0;
+  color: var(--on-error-outline);
+  font-size: 12px;
+}
+
+.list-editor__reset {
+  align-self: flex-start;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.list-editor__reset:hover:not(:disabled) {
+  color: var(--on-surface);
+}
+
+.list-editor__reset:disabled {
+  cursor: default;
+  opacity: 0.5;
+  text-decoration: none;
+}
+
+.action--danger {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  border-radius: var(--shape-pill);
+  background: var(--error);
+  color: var(--on-error);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.action--danger:hover {
+  background: color-mix(in srgb, var(--error) 88%, black);
+}
+
+.action--danger:active {
+  background: color-mix(in srgb, var(--error) 78%, black);
+}

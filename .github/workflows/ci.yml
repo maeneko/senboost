@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Линт и типы
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run format:check
+
+  build:
+    name: Сборка (${{ matrix.os }})
+    needs: check
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Без этого шага Windows-сборка уезжает без winws.exe: extraResources в
+      # electron-builder.yml просто копирует resources/zapret, а он у чистого чекаута пуст.
+      - run: node scripts/fetch-zapret.mjs
+
+      # Подпись не настроена: артефакты неподписанные.
+      # Чтобы подписывать — добавьте секреты и передайте их в env:
+      #   macOS:   CSC_LINK, CSC_KEY_PASSWORD (+ APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID и notarize: true)
+      #   Windows: CSC_LINK, CSC_KEY_PASSWORD
+      - name: Build
+        run: npx --no-install electron-vite build && npx --no-install electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rknboost-${{ matrix.os }}
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+          retention-days: 7

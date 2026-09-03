@@ -1,0 +1,10 @@
+node_modules
+dist
+out
+.DS_Store
+.eslintcache
+*.log*
+release
+resources/zapret
+.idea
+.vscode

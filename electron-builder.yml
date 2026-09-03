@@ -1,0 +1,91 @@
+appId: com.rknboost.app
+productName: RKNboost
+directories:
+  buildResources: build
+  output: release
+
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,README.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,yarn.lock}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!.github/*'
+  # zapret идёт отдельно через extraResources ниже — не дублировать его в app.asar.
+  - '!resources/zapret/**'
+asarUnpack:
+  - 'resources/**'
+
+# Бинарники zapret (npm run zapret:fetch) кладём рядом с приложением, а не в asar —
+# это исполняемые файлы, которые main-процесс запускает через spawn.
+extraResources:
+  - from: resources/zapret
+    to: zapret
+
+win:
+  executableName: RKNboost
+  # Приложение запрашивает права администратора при КАЖДОМ запуске (манифест exe).
+  # Внимание на компромисс: установка при этом остаётся per-user, то есть exe лежит в
+  # %LocalAppData%\Programs\RKNboost — папке, доступной на запись обычному пользователю.
+  # Значит подмена этого exe даёт злоумышленнику администратора с подтверждения самого
+  # пользователя. Это осознанный выбор владельца проекта; безопасный вариант — вернуть
+  # perMachine: true, чтобы exe лежал в защищённом от записи Program Files.
+  requestedExecutionLevel: requireAdministrator
+  target:
+    # arm64 не собираем: WinDivert (драйвер для winws — src/main/zapret/engine.win32.ts)
+    # не имеет подписанной сборки под arm64, только x64 через эмуляцию (docs/windows.md
+    # в поставке zapret) — arm64-инсталлятор был бы заведомо нерабочим.
+    - target: nsis
+      arch: [x64]
+nsis:
+  # Быстрая установка per-user, без UAC и без мастера: ставится в %LocalAppData%, куда
+  # обычный пользователь и так пишет без повышения прав. Раньше здесь стоял perMachine —
+  # это была защита от того, что служба (LocalSystem) ссылалась бы на winws.exe прямо
+  # в папке установки. Теперь вместо этого при первом включении обхода приложение сама
+  # копирует winws.exe в защищённый ACL'ом каталог в %ProgramData% (см. applyServiceConfig
+  # в src/main/zapret/service.win32.ts) — сама установка приложения per-user безопасна.
+  oneClick: true
+  perMachine: false
+  # Удалять %APPDATA%\rknboost (списки сайтов, метка первого запуска) вместе с приложением.
+  # По умолчанию electron-builder этого НЕ делает, и данные оставались бы в системе после
+  # удаления. Обновление приложения под это не попадает — в шаблоне деинсталлятора стоит
+  # проверка `ifNot isUpdated`, так что отредактированные списки переживают обновление.
+  deleteAppDataOnUninstall: true
+  include: build/installer.nsh
+  artifactName: ${name}-${version}-setup-${arch}.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  hardenedRuntime: true
+  # tpws — сторонний Mach-O внутри .app; hardened runtime требует, чтобы electron-builder
+  # подписал и его тем же Developer ID, иначе Gatekeeper убьёт процесс при первом spawn.
+  binaries:
+    - Contents/Resources/zapret/darwin/tpws
+  # Подпись и нотаризация выключены: без Apple Developer ID сборка иначе падает.
+  # Как включить — см. раздел «Подпись» в README.md.
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}-${arch}.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+  maintainer: RKNboost
+  category: Utility
+  synopsis: Кроссплатформенное приложение на Electron
+appImage:
+  artifactName: ${name}-${version}-${arch}.${ext}
+
+npmRebuild: false
