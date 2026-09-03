@@ -1,6 +1,6 @@
 # RKNboost
 
-
+[github.com/maeneko/rknboost](https://github.com/maeneko/rknboost)
 
 ## Требования
 

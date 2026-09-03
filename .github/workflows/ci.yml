@@ -9,7 +9,7 @@ on:
 jobs:
   check:
     name: Линт и типы
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,13 +22,9 @@ jobs:
       - run: npm run format:check
 
   build:
-    name: Сборка (${{ matrix.os }})
+    name: Сборка (Windows)
     needs: check
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -43,9 +39,7 @@ jobs:
       - run: node scripts/fetch-zapret.mjs
 
       # Подпись не настроена: артефакты неподписанные.
-      # Чтобы подписывать — добавьте секреты и передайте их в env:
-      #   macOS:   CSC_LINK, CSC_KEY_PASSWORD (+ APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID и notarize: true)
-      #   Windows: CSC_LINK, CSC_KEY_PASSWORD
+      # Чтобы подписывать — добавьте секреты CSC_LINK, CSC_KEY_PASSWORD и передайте их в env.
       - name: Build
         run: npx --no-install electron-vite build && npx --no-install electron-builder --publish never
         env:
@@ -53,12 +47,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rknboost-${{ matrix.os }}
-          path: |
-            release/*.dmg
-            release/*.zip
-            release/*.exe
-            release/*.AppImage
-            release/*.deb
+          name: rknboost-windows
+          path: release/*.exe
           if-no-files-found: error
           retention-days: 7

@@ -2,8 +2,5 @@
  * Адрес репозитория — одно место на всё приложение. Отсюда его берут и кнопка «GitHub»
  * в настройках (`SettingsView.tsx`), и приветственное окно при первом запуске
  * (`src/main/first-run.ts`).
- *
- * TODO: заглушка. Пока ведёт на главную GitHub — заменить на настоящий адрес репозитория,
- * когда он появится. Менять только здесь, оба места подхватят автоматически.
  */
-export const GITHUB_URL = 'https://github.com'
+export const GITHUB_URL = 'https://github.com/maeneko/rknboost'
