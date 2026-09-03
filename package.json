@@ -1,6 +1,6 @@
 {
   "name": "rknboost",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Кроссплатформенное десктопное приложение на Electron + React + TypeScript",
   "main": "./out/main/index.js",
   "author": "RKNboost",
