@@ -1,6 +1,6 @@
 {
   "name": "senboost",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Кроссплатформенное десктопное приложение на Electron + React + TypeScript",
   "main": "./out/main/index.js",
   "desktopName": "senboost.desktop",

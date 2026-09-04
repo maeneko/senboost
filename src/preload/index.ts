@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
+  BackgroundSettings,
   IpcChannel,
   IpcEventChannel,
   IpcEvents,
@@ -52,6 +53,11 @@ const api = {
 
   /** Windows: подтверждает диалогом ОС, запускает деинсталлятор и закрывает приложение. */
   uninstallApp: (): Promise<void> => invoke('app:uninstall'),
+
+  /** Трей и автозапуск приложения — см. `BackgroundSettings` в контракте. */
+  getBackgroundSettings: (): Promise<BackgroundSettings> => invoke('app:background-get'),
+  setBackgroundSettings: (patch: Partial<BackgroundSettings>): Promise<BackgroundSettings> =>
+    invoke('app:background-set', patch),
 
   getZapretStatus: (): Promise<ZapretStatus> => invoke('zapret:status'),
   getZapretStrategies: (): Promise<ZapretStrategy[]> => invoke('zapret:strategies'),

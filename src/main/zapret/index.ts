@@ -7,10 +7,10 @@ import type {
   ZapretStatus,
   ZapretStrategy
 } from '../../shared/ipc-contract'
-import { loadSettings } from '../settings'
+import { getSettings } from '../settings'
 import { DIAGNOSTIC_TARGETS, runDiagnostics } from './diagnostics'
 import { DarwinEngine } from './engine.darwin'
-import { ZapretEngine, UnsupportedEngine } from './engine'
+import { ZapretEngine, UnsupportedEngine, onZapretStatusChanged } from './engine'
 import { LinuxEngine } from './engine.linux'
 import { Win32Engine } from './engine.win32'
 import { readAllLists, resetList, seedLists, writeList } from './lists'
@@ -46,7 +46,8 @@ export async function recoverZapret(): Promise<void> {
 
   // Сохранённый выбор применяем ДО sync(): у уже установленной службы/демона реальное
   // состояние (стратегия в strategy.cfg, автозапуск) важнее записанного нами и перекроет его.
-  const settings = await loadSettings()
+  // Файл к этому моменту уже прочитан в `app.whenReady()` (см. `src/main/index.ts`).
+  const settings = getSettings()
   engine.restorePreferences({
     // Стратегия могла исчезнуть в обновлении (подборка Flowseal меняется) или остаться от
     // запуска на другой платформе — тогда безопаснее вернуться к умолчанию движка, чем
@@ -70,6 +71,8 @@ function knownStrategyId(strategyId: string | null): string | null {
   const known = listStrategies(process.platform).some((strategy) => strategy.id === strategyId)
   return known ? strategyId : null
 }
+
+export { onZapretStatusChanged }
 
 export function zapretStatus(): ZapretStatus {
   return engine.getStatus()

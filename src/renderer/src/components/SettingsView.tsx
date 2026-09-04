@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ZapretListId, ZapretStatus } from '@shared/ipc-contract'
 import { GITHUB_URL } from '@shared/links'
 import { useAppVersion } from '../hooks/useAppVersion'
+import { useBackgroundSettings } from '../hooks/useBackgroundSettings'
 import { useZapretLists } from '../hooks/useZapretLists'
 import { LIST_TITLES } from '../lib/zapretListMeta'
 import ListEditor from './ListEditor'
@@ -26,6 +27,7 @@ export default function SettingsView({
   onSetAutoStart: (enabled: boolean) => Promise<void>
 }): React.JSX.Element {
   const { lists, save, reset } = useZapretLists()
+  const background = useBackgroundSettings()
   const [openListId, setOpenListId] = useState<ZapretListId | null>(null)
   const appVersion = useAppVersion()
 
@@ -54,9 +56,49 @@ export default function SettingsView({
         <h2 className="settings__title">Настройки</h2>
       </div>
 
+      {background.settings?.trayAvailable && (
+        <div className="settings__group">
+          <span className="settings__label">Фоновая работа</span>
+          <button
+            type="button"
+            className="settings-row"
+            disabled={background.busy}
+            onClick={() => void background.save({ closeToTray: !background.settings?.closeToTray })}
+          >
+            <span>Сворачивать в трей вместо выхода</span>
+            <span
+              className={`chip ${background.settings.closeToTray ? 'chip--success' : 'chip--neutral'}`}
+            >
+              {background.settings.closeToTray ? 'Включено' : 'Выключено'}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="settings-row"
+            disabled={background.busy}
+            onClick={() =>
+              void background.save({ launchAtLogin: !background.settings?.launchAtLogin })
+            }
+          >
+            <span>Запускать приложение вместе с системой</span>
+            <span
+              className={`chip ${background.settings.launchAtLogin ? 'chip--success' : 'chip--neutral'}`}
+            >
+              {background.settings.launchAtLogin ? 'Включён' : 'Выключен'}
+            </span>
+          </button>
+          {background.error && <p className="list-editor__error">{background.error}</p>}
+          <p className="list-editor__hint">
+            Приложение открывается свёрнутым в трей и обход можно включить одним кликом по значку.
+            Это не то же самое, что автозапуск обхода ниже: тот работает вообще без запущенного
+            приложения.
+          </p>
+        </div>
+      )}
+
       {supportsAutoStart && (
         <div className="settings__group">
-          <span className="settings__label">Автозапуск</span>
+          <span className="settings__label">Автозапуск обхода</span>
           <button
             type="button"
             className="settings-row"

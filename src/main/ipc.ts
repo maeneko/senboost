@@ -1,5 +1,13 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron'
-import type { IpcChannel, IpcHandlers, ThemeState } from '../shared/ipc-contract'
+import type {
+  BackgroundSettings,
+  IpcChannel,
+  IpcHandlers,
+  ThemeState
+} from '../shared/ipc-contract'
+import { isAppAutoStartEnabled, setAppAutoStart } from './app-autostart'
+import { rememberPreferences, getSettings } from './settings'
+import { isTrayActive } from './tray'
 import { uninstallApp } from './uninstall.win32'
 import {
   resetZapretList,
@@ -40,6 +48,15 @@ function themeState(): ThemeState {
   }
 }
 
+async function backgroundSettings(): Promise<BackgroundSettings> {
+  return {
+    // `null` в настройках — «не выбирали»: по умолчанию прячем в трей.
+    closeToTray: getSettings().closeToTray !== false,
+    launchAtLogin: await isAppAutoStartEnabled(),
+    trayAvailable: isTrayActive()
+  }
+}
+
 export function registerIpcHandlers(): void {
   handle('theme:get', () => themeState())
 
@@ -52,6 +69,15 @@ export function registerIpcHandlers(): void {
   // платформах он никогда не вызывается.
   handle('app:uninstall', (event) => {
     if (process.platform === 'win32') void uninstallApp(windowOf(event))
+  })
+
+  handle('app:background-get', () => backgroundSettings())
+  handle('app:background-set', async (_event, patch) => {
+    if (patch.closeToTray !== undefined) rememberPreferences({ closeToTray: patch.closeToTray })
+    // Автозапуск меняем последним и не глотаем ошибку: пользователь должен узнать, что
+    // задача в планировщике (или объект входа) не создалась.
+    if (patch.launchAtLogin !== undefined) await setAppAutoStart(patch.launchAtLogin)
+    return backgroundSettings()
   })
 
   handle('zapret:status', () => zapretStatus())

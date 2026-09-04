@@ -16,9 +16,18 @@ export interface AppSettings {
   strategyId: string | null
   /** Windows: запускать службу вместе с системой. На macOS не используется. */
   autoStart: boolean | null
+  /** Закрытие окна прячет его в трей вместо выхода. `null` — не выбирали, считаем включённым. */
+  closeToTray: boolean | null
+  /** Подсказку «свернулся в трей и продолжаю работать» уже показывали. */
+  trayHintShown: boolean | null
 }
 
-const DEFAULTS: AppSettings = { strategyId: null, autoStart: null }
+const DEFAULTS: AppSettings = {
+  strategyId: null,
+  autoStart: null,
+  closeToTray: null,
+  trayHintShown: null
+}
 
 let cache: AppSettings = { ...DEFAULTS }
 
@@ -37,7 +46,9 @@ function sanitize(raw: unknown): AppSettings {
   const value = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>
   return {
     strategyId: typeof value.strategyId === 'string' && value.strategyId ? value.strategyId : null,
-    autoStart: typeof value.autoStart === 'boolean' ? value.autoStart : null
+    autoStart: typeof value.autoStart === 'boolean' ? value.autoStart : null,
+    closeToTray: typeof value.closeToTray === 'boolean' ? value.closeToTray : null,
+    trayHintShown: typeof value.trayHintShown === 'boolean' ? value.trayHintShown : null
   }
 }
 
@@ -60,14 +71,22 @@ async function writeSettings(settings: AppSettings): Promise<void> {
   await rename(tmp, path)
 }
 
+/** Настройки, прочитанные при старте. До `loadSettings()` — умолчания. */
+export function getSettings(): AppSettings {
+  return { ...cache }
+}
+
 /**
- * Вызывается из `ZapretEngine.patch()`, то есть на каждое изменение статуса — отсюда
- * сравнение с прошлым значением. Записи не ждём: интерфейс не должен зависеть от диска,
- * а не сохранившийся выбор не повод ломать работающий обход.
+ * Сохранить изменившиеся поля. Вызывается в том числе из `ZapretEngine.patch()`, то есть на
+ * каждое изменение статуса — отсюда сравнение с прошлым значением. Записи не ждём: интерфейс
+ * не должен зависеть от диска, а не сохранившийся выбор не повод ломать работающий обход.
  */
-export function rememberPreferences(settings: AppSettings): void {
+export function rememberPreferences(patch: Partial<AppSettings>): void {
   if (!loaded) return
-  if (settings.strategyId === cache.strategyId && settings.autoStart === cache.autoStart) return
+
+  const settings: AppSettings = { ...cache, ...patch }
+  const keys = Object.keys(settings) as (keyof AppSettings)[]
+  if (keys.every((key) => settings[key] === cache[key])) return
 
   cache = settings
   writeQueue = writeQueue

@@ -10,6 +10,20 @@ import { rememberPreferences, type AppSettings } from '../settings'
 /** Сколько строк вывода бинарника держим для UI. */
 const LOG_LIMIT = 200
 
+const statusListeners = new Set<(status: ZapretStatus) => void>()
+
+/**
+ * Подписка на изменение статуса внутри main-процесса. Окнам статус уходит событием
+ * `zapret:status-changed`, но трей — не окно (`src/main/tray.ts`), а знать о включении
+ * и выключении ему нужно ровно так же. Возвращает функцию отписки.
+ */
+export function onZapretStatusChanged(listener: (status: ZapretStatus) => void): () => void {
+  statusListeners.add(listener)
+  return () => {
+    statusListeners.delete(listener)
+  }
+}
+
 /** Общая часть обоих движков: хранение статуса и рассылка событий в окна. */
 export abstract class ZapretEngine {
   protected status: ZapretStatus
@@ -39,7 +53,7 @@ export abstract class ZapretEngine {
    *
    * `null` в поле означает «не выбирали» — тогда остаётся то, что решил конструктор движка.
    */
-  restorePreferences(settings: AppSettings): void {
+  restorePreferences(settings: Pick<AppSettings, 'strategyId' | 'autoStart'>): void {
     this.patch({
       strategyId: settings.strategyId ?? this.status.strategyId,
       autoStart: settings.autoStart ?? this.status.autoStart
@@ -81,6 +95,7 @@ export abstract class ZapretEngine {
     // проходит через patch, так что забыть сохранить выбор здесь просто негде.
     rememberPreferences({ strategyId: this.status.strategyId, autoStart: this.status.autoStart })
     this.broadcast('zapret:status-changed', this.status)
+    for (const listener of statusListeners) listener(this.getStatus())
     return this.getStatus()
   }
 

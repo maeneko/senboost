@@ -19,6 +19,24 @@ export interface ThemeState {
   shouldUseDarkColors: boolean
 }
 
+/**
+ * Фоновая работа: трей + автозапуск самого приложения.
+ *
+ * Не путать с `ZapretStatus.autoStart` — тот про автозапуск обхода (служба Windows,
+ * LaunchDaemon macOS) вообще без приложения.
+ */
+export interface BackgroundSettings {
+  /** Закрытие окна прячет его в трей, а не завершает приложение. */
+  closeToTray: boolean
+  /** Приложение запускается вместе с системой, сразу свёрнутым в трей. */
+  launchAtLogin: boolean
+  /**
+   * Иконка в трее реально создалась. На Linux без AppIndicator трея нет — тогда прятать
+   * туда окно нельзя, и всю группу настроек показывать бессмысленно.
+   */
+  trayAvailable: boolean
+}
+
 /** Состояние обхода блокировок. */
 export type ZapretState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
 
@@ -111,6 +129,14 @@ export interface IpcHandlers {
 
   /** Windows: подтверждает диалогом ОС, запускает деинсталлятор и закрывает приложение. */
   'app:uninstall': () => void
+
+  'app:background-get': () => BackgroundSettings
+  /**
+   * Меняет переданные поля и возвращает состояние целиком. `launchAtLogin` идёт в систему
+   * (планировщик задач, SMAppService, каталог автозапуска) и может не примениться — тогда
+   * канал отвечает ошибкой, а не молча возвращает старое значение.
+   */
+  'app:background-set': (patch: Partial<BackgroundSettings>) => BackgroundSettings
 
   'zapret:status': () => ZapretStatus
   'zapret:strategies': () => ZapretStrategy[]
