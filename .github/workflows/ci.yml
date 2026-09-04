@@ -49,17 +49,19 @@ jobs:
       # electron-builder.yml просто копирует resources/zapret, а он у чистого чекаута пуст.
       - run: node scripts/fetch-zapret.mjs
 
-      # electron-builder заливает артефакты несколькими параллельными publisher'ами: оба
-      # проверяют, есть ли релиз с этим тегом, оба видят «нет» и оба лезут его создавать —
-      # второй падает с 422 already_exists и уносит с собой свой файл (на v0.5.0 так потерялся
-      # сам .exe). Создаём релиз заранее, тогда обоим остаётся только залить в готовый.
-      # Описание пустое — его заполняет шаг «Описание релиза» после сборки.
+      # electron-builder заливает артефакты несколькими параллельными publisher'ами внутри
+      # этой же джобы, а с приходом Linux-сборки (отдельная джоба ниже) к этому добавилась
+      # ещё и гонка МЕЖДУ джобами: обе проверяют, есть ли релиз с этим тегом, обе видят «нет»
+      # и обе лезут его создавать — вторая падает с 422 already_exists (на v0.5.0 так
+      # потерялся сам .exe, когда конкурентами были два publisher'а внутри одной джобы).
+      # `|| true` — проигравшая гонку джоба не должна из-за этого падать целиком: релиз
+      # к моменту upload всё равно уже существует, просто создала его не она.
       - name: Заготовка релиза
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
-            gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --notes ''
+            gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --notes '' || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -70,7 +72,7 @@ jobs:
       # заготовленный шагом выше, используя repository из package.json.
       # На push в main/PR публикации нет — только упаковка и загрузка в Artifacts ниже.
       - name: Build
-        run: npx --no-install electron-vite build && npx --no-install electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        run: npx --no-install electron-vite build && npx --no-install electron-builder --win --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -89,7 +91,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Релиз создан с пустым описанием, поэтому список изменений дописываем сами:
-      # коммиты между предыдущим тегом vX.Y.Z и текущим.
+      # коммиты между предыдущим тегом vX.Y.Z и текущим. Только в этой джобе — если то же
+      # самое сделает ещё и Linux-сборка, они просто перезапишут результат друг друга.
       - name: Описание релиза
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -122,5 +125,73 @@ jobs:
         with:
           name: rknboost-windows
           path: release/*.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  build-linux:
+    name: Сборка (Linux)
+    needs: check
+    runs-on: ubuntu-latest
+    # На тег vX.Y.Z нужен contents: write — electron-builder публикует релиз через GH_TOKEN.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Без этого шага сборка уезжает без nfqws: extraResources в electron-builder.yml
+      # просто копирует resources/zapret, а он у чистого чекаута пуст.
+      - run: node scripts/fetch-zapret.mjs
+
+      # Та же гонка «кто первый создаст релиз», что и в джобе Windows выше — эта джоба
+      # с ней конкурирует наравне (обе стартуют параллельно после check), отсюда и тот же
+      # `|| true`. Комментарий с полным объяснением — в джобе Windows.
+      - name: Заготовка релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --notes '' || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Подпись/нотаризация не при чём здесь — это Linux, .AppImage и .deb неподписанные
+      # в любом случае. На push в main/PR публикации нет — только упаковка и Artifacts ниже.
+      - name: Build
+        run: npx --no-install electron-vite build && npx --no-install electron-builder --linux --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Тот же мотив, что у Windows-джобы: в релизе должны остаться только сами артефакты
+      # и контрольная сумма к каждому — никаких .blockmap/latest-linux.yml.
+      - name: Контрольная сумма
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release/*.AppImage release/*.deb)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "не нашлось ни .AppImage, ни .deb в release/" >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            md5sum "$file" | awk '{ print $1 }' > "$file.md5"
+            gh release upload "$GITHUB_REF_NAME" "$file.md5" --clobber
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rknboost-linux
+          path: |
+            release/*.AppImage
+            release/*.deb
           if-no-files-found: error
           retention-days: 7

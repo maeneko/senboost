@@ -24,16 +24,30 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,yarn.lock}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!.github/*'
-  # zapret идёт отдельно через extraResources ниже — не дублировать его в app.asar.
+  # zapret и linux-helper идут отдельно через extraResources ниже — не дублировать их в app.asar.
   - '!resources/zapret/**'
+  - '!resources/linux-helper/**'
 asarUnpack:
   - 'resources/**'
 
 # Бинарники zapret (npm run zapret:fetch) кладём рядом с приложением, а не в asar —
 # это исполняемые файлы, которые main-процесс запускает через spawn.
+#
+# Общие для всех платформ куски (списки, fake-пакеты, лицензии zapret/Flowseal) — здесь;
+# платформенные бинарники — в extraResources соответствующего раздела (win/mac/linux) ниже.
+# extraResources платформы ДОБАВЛЯЕТСЯ к этому списку, а не заменяет его (проверено по
+# исходникам electron-builder, app-builder-lib/fileMatcher.js) — так Windows-сборка не везёт
+# nfqws и Mach-O tpws, а Linux-сборка не везёт WinDivert и winws.exe.
 extraResources:
+  - from: resources/zapret/lists
+    to: zapret/lists
+  - from: resources/zapret/fakes
+    to: zapret/fakes
   - from: resources/zapret
     to: zapret
+    filter:
+      - 'LICENSE.zapret.txt'
+      - 'LICENSE.flowseal.txt'
 
 win:
   executableName: RKNboost
@@ -50,6 +64,13 @@ win:
     # в поставке zapret) — arm64-инсталлятор был бы заведомо нерабочим.
     - target: nsis
       arch: [x64]
+  extraResources:
+    - from: resources/zapret/win32
+      to: zapret/win32
+    - from: resources/zapret
+      to: zapret
+      filter:
+        - 'LICENSE.WinDivert.txt'
 nsis:
   # Быстрая установка per-user, без UAC и без мастера: ставится в %LocalAppData%, куда
   # обычный пользователь и так пишет без повышения прав. Раньше здесь стоял perMachine —
@@ -91,17 +112,52 @@ mac:
   # Подпись и нотаризация выключены: без Apple Developer ID сборка иначе падает.
   # Как включить — см. раздел «Подпись» в README.md.
   notarize: false
+  extraResources:
+    - from: resources/zapret/darwin
+      to: zapret/darwin
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
 
 linux:
+  executableName: rknboost
+  # desktopName в package.json + syncDesktopName — иначе Electron не свяжет открытые окна
+  # с .desktop-записью (app_id/WM_CLASS), и часть окружений не покажет иконку в панели задач.
+  syncDesktopName: true
   target:
-    - AppImage
-    - deb
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   maintainer: RKNboost
-  category: Utility
-  synopsis: Кроссплатформенное приложение на Electron
+  category: Network
+  synopsis: Обход блокировок через zapret
+  extraResources:
+    - from: resources/zapret/linux
+      to: zapret/linux
+    # rknboost-helper.sh — привилегированный помощник (nfqws.linux.ts зовёт его через
+    # pkexec). Не из resources/zapret: тот качает fetch-zapret.mjs, а этот файл — свой,
+    # лежит в репозитории (см. src/main/zapret/paths.ts:bundledHelperPath()).
+    - from: resources/linux-helper
+      to: linux-helper
 appImage:
   artifactName: ${name}-${version}-${arch}.${ext}
+deb:
+  artifactName: ${name}-${version}-${arch}.${ext}
+  # electron-builder ЗАМЕНЯЕТ этим списком свои дефолтные зависимости Electron, а не
+  # дополняет их (проверено по исходникам, app-builder-lib/targets/FpmTarget.js) — потерять
+  # хотя бы одну из первых девяти значило бы получить .deb, который ставится и не запускается.
+  # nftables и polkit — уже наши, для nfqws/pkexec.
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+    - nftables
+    - policykit-1
 
 npmRebuild: false

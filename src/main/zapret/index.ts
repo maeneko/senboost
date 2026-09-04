@@ -12,6 +12,7 @@ import { loadSettings } from '../settings'
 import { DIAGNOSTIC_TARGETS, runDiagnostics } from './diagnostics'
 import { DarwinEngine } from './engine.darwin'
 import { ZapretEngine, UnsupportedEngine } from './engine'
+import { LinuxEngine } from './engine.linux'
 import { Win32Engine } from './engine.win32'
 import { readAllLists, resetList, seedLists, writeList } from './lists'
 import { autoHostlistPath } from './paths'
@@ -23,6 +24,8 @@ function createEngine(): ZapretEngine {
       return new DarwinEngine()
     case 'win32':
       return new Win32Engine()
+    case 'linux':
+      return new LinuxEngine()
     default:
       return new UnsupportedEngine()
   }
@@ -33,8 +36,9 @@ const engine = createEngine()
 /**
  * Готовим списки сайтов, возвращаем выбор пользователя из прошлого запуска и синхронизируем
  * состояние с системой — на macOS чиним прокси от прошлого аварийного завершения, на Windows
- * подхватываем службу, которая могла работать ещё до открытия окна (автозапуск с системой).
- * Все шаги нужно сделать до открытия окна.
+ * подхватываем службу, которая могла работать ещё до открытия окна (автозапуск с системой),
+ * на Linux — демон nfqws, переживший закрытие приложения (автозапуска у него нет, но сам
+ * процесс и правила nftables продолжают работать). Все шаги нужно сделать до открытия окна.
  */
 export async function recoverZapret(): Promise<void> {
   await seedLists()
@@ -52,6 +56,7 @@ export async function recoverZapret(): Promise<void> {
 
   if (engine instanceof DarwinEngine) await engine.recoverFromCrash()
   if (engine instanceof Win32Engine) await engine.sync()
+  if (engine instanceof LinuxEngine) await engine.sync()
 }
 
 function knownStrategyId(strategyId: string | null): string | null {

@@ -12,6 +12,7 @@ import ListEditor from './ListEditor'
  * включения, где ими и пользуются. Отдельный экран за шестерёнкой в шапке.
  */
 const isWindows = window.api.platform === 'win32'
+const isDarwin = window.api.platform === 'darwin'
 const APP_CHANNEL = 'beta'
 
 export default function SettingsView({
@@ -87,9 +88,9 @@ export default function SettingsView({
           </button>
         ))}
 
-        {/* На Windows ни одна из 22 стратегий Flowseal не использует --hostlist-auto — счётчик
-            всегда пуст, показывать его смысла нет. */}
-        {!isWindows && (
+        {/* --hostlist-auto есть только в darwin-профилях (см. strategies.ts) — ни одна из 22
+            стратегий Flowseal (Windows и Linux) его не использует, счётчик там всегда пуст. */}
+        {isDarwin && (
           <div className="settings-row settings-row--static">
             <span>Найдено автоматически</span>
             <span className="settings-row__count">

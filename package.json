@@ -1,8 +1,9 @@
 {
   "name": "rknboost",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Кроссплатформенное десктопное приложение на Electron + React + TypeScript",
   "main": "./out/main/index.js",
+  "desktopName": "rknboost.desktop",
   "author": "RKNboost",
   "license": "MIT",
   "repository": {

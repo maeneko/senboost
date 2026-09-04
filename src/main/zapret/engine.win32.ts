@@ -21,7 +21,12 @@ import {
   stopService,
   type ServiceInfo
 } from './service.win32'
-import { defaultStrategyId, winwsConfigFile, type WinwsConfig } from './strategies'
+import {
+  defaultStrategyId,
+  type EngineConfig,
+  parseStrategyMarker,
+  winwsConfigFile
+} from './strategies'
 
 const run = promisify(execFile)
 
@@ -72,7 +77,7 @@ async function binariesNeedCopy(): Promise<boolean> {
  * winws.exe отстала от оригинала в папке приложения, или если аргументы стратегии
  * изменились (маркер в `strategy.cfg` не совпадает с тем, что сгенерировали сейчас).
  */
-async function needsReconfigure(config: WinwsConfig, info: ServiceInfo | null): Promise<boolean> {
+async function needsReconfigure(config: EngineConfig, info: ServiceInfo | null): Promise<boolean> {
   if (!info) return true
   if (await binariesNeedCopy()) return true
   return (await readInstalledMarkerLine()) !== config.marker
@@ -107,8 +112,7 @@ export class Win32Engine extends ZapretEngine {
     }
 
     const installedLine = await readInstalledMarkerLine()
-    const match = installedLine ? /^--comment=rknboost:([^:]+):/.exec(installedLine) : null
-    const strategyId = match?.[1] ?? this.status.strategyId
+    const strategyId = parseStrategyMarker(installedLine) ?? this.status.strategyId
 
     return this.patch({
       serviceInstalled: true,
@@ -125,7 +129,7 @@ export class Win32Engine extends ZapretEngine {
   async start(strategyId: string): Promise<ZapretStatus> {
     this.patch({ state: 'starting', strategyId, error: null })
 
-    let config: WinwsConfig
+    let config: EngineConfig
     try {
       config = winwsConfigFile(strategyId)
     } catch (error) {

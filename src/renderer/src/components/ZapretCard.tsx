@@ -47,9 +47,11 @@ export default function ZapretCard(): React.JSX.Element {
         {toggleLabel}
       </button>
 
-      {status?.state === 'error' && status.error && (
-        <p className="list-editor__error">{status.error}</p>
-      )}
+      {/* Не только при state === 'error': UnsupportedEngine (платформа без сборки движка)
+          пишет причину в error, оставляя state 'stopped' — иначе текст был бы недостижим,
+          а пользователь на неподдерживаемой платформе видел бы пустой список стратегий
+          без единого объяснения. */}
+      {status?.error && <p className="list-editor__error">{status.error}</p>}
 
       <div className="settings__field">
         <span className="settings__label">Способ</span>

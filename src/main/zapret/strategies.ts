@@ -13,11 +13,14 @@ import { WIN32_STRATEGIES } from './strategies.win32.generated'
  * переупорядочивать сегменты (`--split-pos`, `--disorder`, `--oob`, `--tlsrec`), но не
  * умеет ни fake-пакетов, ни UDP/QUIC вообще. Профили ниже — свои, под это ограничение.
  *
- * `winws` (Windows) работает на уровне пакетов через WinDivert. Его пресеты — 22 варианта
- * из Flowseal/zapret-discord-youtube, перенесённые в `strategies.win32.generated.ts`
- * генератором `scripts/import-flowseal-strategies.mjs` (не батниками — кодом).
+ * `winws` (Windows) и `nfqws` (Linux) — один и тот же движок zapret на уровне пакетов
+ * (winws — сборка nfq/nfqws.c под WinDivert вместо netfilter), поэтому делят один набор
+ * пресетов — 22 варианта из Flowseal/zapret-discord-youtube, перенесённые в
+ * `strategies.win32.generated.ts` генератором `scripts/import-flowseal-strategies.mjs`
+ * (не батниками — кодом). На Linux `--wf-tcp`/`--wf-udp` из тех же аргументов уходят не в
+ * nfqws, а в правила nftables — см. `nfqwsConfig()` ниже и `resources/linux-helper/`.
  *
- * Оба движка используют одни и те же списки сайтов (`src/main/zapret/lists.ts`):
+ * Все три движка используют одни и те же списки сайтов (`src/main/zapret/lists.ts`):
  * `{LISTS}/<id>.txt` — путь резолвится в `resolvePlaceholders()` ниже.
  */
 interface DarwinStrategyDefinition extends ZapretStrategy {
@@ -143,9 +146,18 @@ const DARWIN_DEFINITIONS: DarwinStrategyDefinition[] = [
   }
 ]
 
-/** Стратегия по умолчанию — своя на каждой платформе, наборы id не пересекаются. */
+/**
+ * Стратегия по умолчанию. win32 и linux делят один набор id (оба читают
+ * `WIN32_STRATEGIES`), поэтому и дефолт у них общий — 'general'; у darwin свой набор.
+ */
 export function defaultStrategyId(platform: NodeJS.Platform): string {
-  return platform === 'win32' ? 'general' : 'split'
+  switch (platform) {
+    case 'win32':
+    case 'linux':
+      return 'general'
+    default:
+      return 'split'
+  }
 }
 
 function resolvePlaceholders(arg: string): string {
@@ -153,6 +165,17 @@ function resolvePlaceholders(arg: string): string {
     .replaceAll(LISTS_PLACEHOLDER, userListsDir())
     .replaceAll(FAKES_PLACEHOLDER, fakesDir())
     .replaceAll(AUTO_PLACEHOLDER, autoHostlistPath())
+}
+
+/** win32 и linux показывают один и тот же список Flowseal-пресетов — читают его из общего массива. */
+function flowsealStrategies(platform: 'win32' | 'linux'): ZapretStrategy[] {
+  return WIN32_STRATEGIES.map(({ id, name }) => ({
+    id,
+    name,
+    // У Flowseal нет описаний стратегий — только имена вариантов, подобранных под провайдера.
+    description: 'Стратегия из подборки Flowseal/zapret-discord-youtube.',
+    platforms: [platform]
+  }))
 }
 
 /** Пресеты, применимые к текущей платформе. */
@@ -165,15 +188,8 @@ export function listStrategies(platform: NodeJS.Platform): ZapretStrategy[] {
       platforms
     }))
   }
-  if (platform === 'win32') {
-    return WIN32_STRATEGIES.map(({ id, name }) => ({
-      id,
-      name,
-      // У Flowseal нет описаний стратегий — только имена вариантов, подобранных под провайдера.
-      description: 'Стратегия из подборки Flowseal/zapret-discord-youtube.',
-      platforms: ['win32']
-    }))
-  }
+  if (platform === 'win32') return flowsealStrategies('win32')
+  if (platform === 'linux') return flowsealStrategies('linux')
   return []
 }
 
@@ -201,12 +217,13 @@ export function winwsArgs(strategyId: string): string[] {
   return strategy.args.map(resolvePlaceholders)
 }
 
-/** Читает служба: `winws.exe @strategy.cfg`, ограничение размера у самого winws — 16 КБ. */
+/** Читают winws и nfqws через `@strategy.cfg` — ограничение размера общее у обоих, 16 КБ. */
 const MAX_CONFIG_FILE_BYTES = 16000
 
 /**
- * winws разбирает файл конфигурации через POSIX `wordexp()` (см. `nfq/nfqws.c` в поставке
- * zapret) — без кавычек он режет аргумент по пробелам и съедает обратные слэши в путях вида
+ * winws и nfqws — один и тот же парсер аргументов (`nfq/nfqws.c` в поставке zapret,
+ * winws — его сборка под WinDivert), файл конфигурации разбирают через POSIX `wordexp()` —
+ * без кавычек он режет аргумент по пробелам и съедает обратные слэши в путях вида
  * `C:\Users\...`. Каждый аргумент поэтому кладём в одинарные кавычки, а `'` внутри значения
  * экранируем как `'\''` — тем же приёмом, что и `networksetup()` в `proxy.darwin.ts` для shell.
  */
@@ -215,33 +232,104 @@ function quoteConfigArg(arg: string): string {
 }
 
 /**
- * Первая строка — маркер: по нему `Win32Engine.sync()` узнаёт, какая стратегия уже установлена
- * в службу, не перечитывая все аргументы. Сам маркер — штатная опция `--comment` winws,
- * в работу процесса не вмешивается.
+ * Первая строка — маркер: по нему `Win32Engine.sync()`/`LinuxEngine.sync()` узнают, какая
+ * стратегия уже установлена, не перечитывая все аргументы. Сам маркер — штатная опция
+ * `--comment` (есть и у winws, и у nfqws), в работу процесса не вмешивается.
  */
 function configMarker(strategyId: string, body: string): string {
   const hash = createHash('sha256').update(body).digest('hex').slice(0, 12)
   return `--comment=rknboost:${strategyId}:${hash}`
 }
 
-export interface WinwsConfig {
-  /** Содержимое `strategy.cfg` — UTF-8 без BOM, как требует winws (docs/windows.md zapret). */
+const MARKER_PATTERN = /^--comment=rknboost:([^:]+):/
+
+/**
+ * Обратная операция к `configMarker()` — достаёт id стратегии из первой строки уже
+ * установленного конфига. Общий разбор для `Win32Engine.sync()` и `LinuxEngine.sync()`,
+ * чтобы регэксп маркера не разъехался на два места.
+ */
+export function parseStrategyMarker(line: string | null): string | null {
+  if (!line) return null
+  return MARKER_PATTERN.exec(line)?.[1] ?? null
+}
+
+export interface EngineConfig {
+  /** Содержимое `strategy.cfg` — UTF-8 без BOM, как требует winws/nfqws (docs/windows.md zapret). */
   body: string
   /** Маркер первой строки — сравнить с уже установленным, чтобы понять, нужна ли перенастройка. */
   marker: string
 }
 
-/** Рендерит стратегию в файл аргументов для `winws.exe @<file>` — см. `WinwsConfig`. */
-export function winwsConfigFile(strategyId: string): WinwsConfig {
-  const args = winwsArgs(strategyId).map(quoteConfigArg).join('\n')
-  const marker = configMarker(strategyId, args)
-  const body = `${marker}\n${args}\n`
+/** Общий рендер: кавычки, маркер первой строкой, проверка лимита в 16 КБ. */
+function renderConfigFile(strategyId: string, args: string[]): EngineConfig {
+  const quoted = args.map(quoteConfigArg).join('\n')
+  const marker = configMarker(strategyId, quoted)
+  const body = `${marker}\n${quoted}\n`
 
   if (Buffer.byteLength(body, 'utf8') > MAX_CONFIG_FILE_BYTES) {
     throw new Error(
-      `Стратегия «${strategyId}» не помещается в лимит winws на файл конфигурации (16 КБ).`
+      `Стратегия «${strategyId}» не помещается в лимит winws/nfqws на файл конфигурации (16 КБ).`
     )
   }
 
   return { body, marker }
+}
+
+/** Рендерит стратегию в файл аргументов для `winws.exe @<file>` — см. `EngineConfig`. */
+export function winwsConfigFile(strategyId: string): EngineConfig {
+  return renderConfigFile(strategyId, winwsArgs(strategyId))
+}
+
+const WF_TCP_PREFIX = '--wf-tcp='
+const WF_UDP_PREFIX = '--wf-udp='
+
+export interface NfqwsConfig extends EngineConfig {
+  /** Порты для правила nftables `post` (исходящий трафик) — см. `rknboost-helper.sh`. */
+  tcpPorts: string
+  /** Порты для правил nftables `post`/`pre` (исходящий и ответный UDP). */
+  udpPorts: string
+}
+
+/**
+ * На Windows `--wf-tcp`/`--wf-udp` — это фильтр самого WinDivert, зашитый в те же аргументы
+ * winws. На Linux фильтрацию делает nftables снаружи nfqws (см. `rknboost-helper.sh`), а
+ * сам nfqws эти два аргумента не понимает — вырезаем их и отдаём отдельно вызывающей стороне.
+ */
+export function nfqwsConfig(strategyId: string): NfqwsConfig {
+  const args = winwsArgs(strategyId)
+  let tcpPorts: string | null = null
+  let udpPorts: string | null = null
+  const nfqwsArgs: string[] = []
+
+  for (const arg of args) {
+    if (arg.startsWith(WF_TCP_PREFIX)) {
+      tcpPorts = arg.slice(WF_TCP_PREFIX.length)
+    } else if (arg.startsWith(WF_UDP_PREFIX)) {
+      udpPorts = arg.slice(WF_UDP_PREFIX.length)
+    } else {
+      nfqwsArgs.push(arg)
+    }
+  }
+
+  // На всех 22 стратегиях сейчас ровно по одному --wf-tcp/--wf-udp (проверено вручную при
+  // добавлении Linux), но если очередной апдейт Flowseal формат изменит — лучше явная ошибка
+  // здесь, чем nftables-правило без портов.
+  if (tcpPorts === null || udpPorts === null) {
+    throw new Error(`Стратегия «${strategyId}»: не найден --wf-tcp/--wf-udp в аргументах.`)
+  }
+
+  // Значение уходит прямо в множество nft-правила (rknboost-helper.sh) без дополнительного
+  // экранирования — только цифры, запятые и дефисы диапазонов. Если Flowseal когда-нибудь
+  // передаст что-то ещё (например, `~` — отрицание порта), лучше явная ошибка тут, чем
+  // нераспознанный текст в командной строке nft, которую выполняет root.
+  for (const [flag, ports] of [
+    ['--wf-tcp', tcpPorts],
+    ['--wf-udp', udpPorts]
+  ] as const) {
+    if (!/^\d+(-\d+)?(,\d+(-\d+)?)*$/.test(ports)) {
+      throw new Error(`Стратегия «${strategyId}»: неожиданный формат ${flag}=${ports}`)
+    }
+  }
+
+  return { ...renderConfigFile(strategyId, nfqwsArgs), tcpPorts, udpPorts }
 }

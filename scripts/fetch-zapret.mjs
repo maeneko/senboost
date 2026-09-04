@@ -41,6 +41,7 @@ const PREFIX = `zapret-${ZAPRET_VERSION}`
 /** Что забираем из архива bol-van/zapret: путь внутри архива → путь внутри resources/zapret. */
 const FILES = {
   'binaries/mac64/tpws': 'darwin/tpws',
+  'binaries/linux-x86_64/nfqws': 'linux/x64/nfqws',
   'binaries/windows-x86_64/winws.exe': 'win32/x64/winws.exe',
   'binaries/windows-x86_64/cygwin1.dll': 'win32/x64/cygwin1.dll',
   'binaries/windows-x86_64/WinDivert.dll': 'win32/x64/WinDivert.dll',
@@ -49,7 +50,7 @@ const FILES = {
 }
 
 /** Исполняемый бит нужен только там, где мы сами запускаем бинарник. */
-const EXECUTABLE = new Set(['darwin/tpws'])
+const EXECUTABLE = new Set(['darwin/tpws', 'linux/x64/nfqws'])
 
 /**
  * Списки доменов Flowseal → наши короткие имена (используются и в `lists.ts`, и
@@ -206,6 +207,7 @@ async function main() {
 if (
   process.argv.includes('--force') ||
   !existsSync(join(DEST, 'darwin', 'tpws')) ||
+  !existsSync(join(DEST, 'linux', 'x64', 'nfqws')) ||
   !existsSync(join(DEST, 'win32', 'x64', 'winws.exe')) ||
   !existsSync(join(DEST, 'lists', 'general.txt'))
 ) {

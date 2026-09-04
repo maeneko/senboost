@@ -116,15 +116,15 @@ export abstract class ZapretEngine {
   }
 }
 
-/** Заглушка для платформ, под которые мы бинарники не собираем (Linux). */
+/** Заглушка для платформ, под которые мы бинарники не собираем (FreeBSD и прочее — не macOS/Windows/Linux). */
 export class UnsupportedEngine extends ZapretEngine {
   constructor() {
     super('unsupported', '')
-    this.status.error = 'Обход блокировок доступен только на macOS и Windows.'
+    this.status.error = 'Обход блокировок доступен только на macOS, Windows и Linux.'
   }
 
   async start(): Promise<ZapretStatus> {
-    throw new Error('Обход блокировок доступен только на macOS и Windows.')
+    throw new Error('Обход блокировок доступен только на macOS, Windows и Linux.')
   }
 
   async stop(): Promise<ZapretStatus> {

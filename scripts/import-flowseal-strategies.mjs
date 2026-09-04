@@ -97,6 +97,11 @@ function parseBatFile(filename, content) {
     // Мы передаём argv напрямую в spawn (без шелла) — кавычки внутри значения
     // остались бы буквальными символами в имени файла, поэтому убираем везде.
     .map((t) => t.replaceAll('"', ''))
+    // `^!` — экранирование `!` в cmd.exe (в .bat включён enabledelayedexpansion, где `!`
+    // иначе разворачивался бы как переменная). cmd.exe снимает его сам перед запуском
+    // winws.exe; здесь командную строку разбираем руками, и `^` иначе остался бы буквально
+    // в значении. Реальное значение zapret ожидает — `!` («'!' = standard fake» в readme).
+    .map((t) => t.replaceAll('=^!', '=!'))
     .map(resolvePlaceholders)
 
   if (tokens.length < 5)

@@ -24,11 +24,13 @@ export type ZapretState = 'stopped' | 'starting' | 'running' | 'stopping' | 'err
 
 /**
  * Чем именно обходим на этой платформе:
- *   • `tpws-socks`    — macOS: локальный socks5-прокси, права не нужны;
- *   • `winws-service` — Windows: служба с драйвером WinDivert;
- *   • `unsupported`   — платформа без поддержки (Linux у нас не собран).
+ *   • `tpws-socks`     — macOS: локальный socks5-прокси, права не нужны;
+ *   • `winws-service`  — Windows: служба с драйвером WinDivert;
+ *   • `nfqws-nftables` — Linux: демон nfqws + правила nftables (NFQUEUE), root через pkexec
+ *                        на каждое включение — ни службы, ни автозапуска здесь нет;
+ *   • `unsupported`    — платформа без поддержки (не macOS/Windows/Linux).
  */
-export type ZapretBackend = 'tpws-socks' | 'winws-service' | 'unsupported'
+export type ZapretBackend = 'tpws-socks' | 'winws-service' | 'nfqws-nftables' | 'unsupported'
 
 export interface ZapretStatus {
   state: ZapretState
@@ -39,13 +41,13 @@ export interface ZapretStatus {
   startedAt: string | null
   /** Текст последней ошибки — показываем пользователю как есть. */
   error: string | null
-  /** macOS: адрес socks5-прокси, пока обход работает. */
+  /** macOS: адрес socks5-прокси, пока обход работает. На Linux/Windows всегда null. */
   socksAddress: string | null
-  /** macOS: прописан ли прокси в системных настройках сети. */
+  /** macOS: прописан ли прокси в системных настройках сети. На Linux/Windows не используется. */
   systemProxyApplied: boolean
   /** Windows: установлена ли служба (её ставит и настраивает само приложение при первом включении). */
   serviceInstalled: boolean
-  /** Windows: стоит ли служба на автозапуск с системой (`sc config start=`). */
+  /** Windows: стоит ли служба на автозапуск с системой (`sc config start=`). На Linux автозапуска нет. */
   autoStart: boolean
 }
 
@@ -120,7 +122,8 @@ export interface IpcHandlers {
   'zapret:set-system-proxy': (enabled: boolean) => ZapretStatus
   /**
    * Выбор пресета. Если обход выключен — просто запоминается. Если включён — на macOS
-   * перезапускает tpws, на Windows перенастраивает службу (потребуется UAC).
+   * перезапускает tpws, на Windows перенастраивает службу (потребуется UAC), на Linux
+   * перезапускает nfqws и правила nftables (потребуется пароль через pkexec).
    */
   'zapret:set-strategy': (strategyId: string) => ZapretStatus
   /** Windows: автозапуск службы с системой (`sc config start=`); требует UAC. */
