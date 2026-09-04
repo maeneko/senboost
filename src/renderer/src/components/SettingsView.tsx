@@ -7,12 +7,13 @@ import { LIST_TITLES } from '../lib/zapretListMeta'
 import ListEditor from './ListEditor'
 
 /**
- * Настройки: списки сайтов + автозапуск (Windows). Выбор стратегии и проверка
+ * Настройки: списки сайтов + автозапуск (macOS/Windows). Выбор стратегии и проверка
  * соединения переехали на главный экран (ZapretCard.tsx) — рядом с кнопкой
  * включения, где ими и пользуются. Отдельный экран за шестерёнкой в шапке.
  */
 const isWindows = window.api.platform === 'win32'
 const isDarwin = window.api.platform === 'darwin'
+const supportsAutoStart = isWindows || isDarwin
 const APP_CHANNEL = 'beta'
 
 export default function SettingsView({
@@ -24,7 +25,7 @@ export default function SettingsView({
   status: ZapretStatus | null
   onSetAutoStart: (enabled: boolean) => Promise<void>
 }): React.JSX.Element {
-  const { lists, autoHostlist, save, reset, clearAuto } = useZapretLists()
+  const { lists, save, reset } = useZapretLists()
   const [openListId, setOpenListId] = useState<ZapretListId | null>(null)
   const appVersion = useAppVersion()
 
@@ -53,7 +54,7 @@ export default function SettingsView({
         <h2 className="settings__title">Настройки</h2>
       </div>
 
-      {isWindows && (
+      {supportsAutoStart && (
         <div className="settings__group">
           <span className="settings__label">Автозапуск</span>
           <button
@@ -61,14 +62,19 @@ export default function SettingsView({
             className="settings-row"
             onClick={() => void onSetAutoStart(!status?.autoStart)}
           >
-            <span>Запускать вместе с Windows</span>
+            <span>Запускать вместе с {isWindows ? 'Windows' : 'macOS'}</span>
             <span className={`chip ${status?.autoStart ? 'chip--success' : 'chip--neutral'}`}>
               {status?.autoStart ? 'Включён' : 'Выключен'}
             </span>
           </button>
           <p className="list-editor__hint">
-            Меняется через запрос прав администратора. Если выключить обход кнопкой на главном
-            экране, при включённом автозапуске он вернётся не раньше следующей перезагрузки.
+            {isWindows
+              ? 'Меняется через запрос прав администратора. Если выключить обход кнопкой на ' +
+                'главном экране, при включённом автозапуске он вернётся не раньше следующей ' +
+                'перезагрузки.'
+              : 'Меняется через пароль администратора. Действует, пока обход включён: ' +
+                'выключение кнопкой на главном экране полностью снимает установку — ' +
+                'автозапуск снова понадобится включить вместе с обходом.'}
           </p>
         </div>
       )}
@@ -87,26 +93,6 @@ export default function SettingsView({
             <span className="settings-row__count">{list.entries.length} ›</span>
           </button>
         ))}
-
-        {/* --hostlist-auto есть только в darwin-профилях (см. strategies.ts) — ни одна из 22
-            стратегий Flowseal (Windows и Linux) его не использует, счётчик там всегда пуст. */}
-        {isDarwin && (
-          <div className="settings-row settings-row--static">
-            <span>Найдено автоматически</span>
-            <span className="settings-row__count">
-              {autoHostlist.length}
-              {autoHostlist.length > 0 && (
-                <button
-                  type="button"
-                  className="settings-row__clear"
-                  onClick={() => void clearAuto()}
-                >
-                  Очистить
-                </button>
-              )}
-            </span>
-          </div>
-        )}
       </div>
 
       <section className="card settings__support">

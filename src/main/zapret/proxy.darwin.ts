@@ -1,17 +1,24 @@
 import { app } from 'electron'
 import { execFile } from 'node:child_process'
-import { readFile, writeFile, rm } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
 
 /**
- * Домены и адреса, которые не должны идти через прокси. Без этого списка отвалится
- * всё локальное: tpws по документации запрещает подключения к тому же хосту,
- * на котором работает сам, включая localhost.
+ * Разовая миграция с версий на `tpws` (≤0.5.4, socks5-прокси уровня TCP-соединений).
+ * Новый движок (`utunws`, см. `engine.darwin.ts`) обходит блокировки на уровне пакетов
+ * через pf/utun и системный прокси не использует вовсе — `applySystemProxy()` (когда-то
+ * прописывала socks в сетевые настройки) больше не нужна и удалена.
+ *
+ * Но у пользователей, обновляющихся со старой версии, снимок настроек мог остаться на
+ * диске: если tpws-приложение завершилось аварийно (`kill -9`, крах системы), оно не
+ * успевало снять socks-прокси из системных настроек сети — тогда система тычется в
+ * несуществующий сервер, и после обновления просто нет интернета, пока кто-то не откатит
+ * прокси руками. `restoreSystemProxy()`/`hasStaleSnapshot()` остаются ровно ради этого
+ * разового отката в `recoverZapret()` (`zapret/index.ts`), до открытия окна.
  */
-const BYPASS = ['*.local', '169.254/16', 'localhost', '127.0.0.1', '::1']
 
 interface ServiceProxyState {
   service: string
@@ -35,7 +42,9 @@ function snapshotPath(): string {
  * `networksetup` требует членства в группе admin. На обычном Mac пользователь в ней
  * состоит и пароль не спрашивается. Если же включена политика «требовать пароль
  * администратора для системных настроек», команда падает — тогда повторяем её через
- * системный диалог авторизации.
+ * системный диалог авторизации (та же логика, что и `runPrivileged()` в `elevate.darwin.ts`,
+ * этот файл написан раньше и его исторически не трогаем — обе копии удаляются вместе с
+ * этой миграцией, когда версии ≤0.5.4 отойдут в прошлое).
  */
 async function networksetup(args: string[]): Promise<string> {
   try {
@@ -58,46 +67,12 @@ async function networksetup(args: string[]): Promise<string> {
     } catch (elevationError) {
       const text = elevationError instanceof Error ? elevationError.message : String(elevationError)
       if (text.includes('-128'))
-        throw new Error('Изменение системного прокси отменено.', { cause: elevationError })
-      throw new Error(`Не удалось изменить настройки прокси: ${text}`, { cause: elevationError })
+        throw new Error('Восстановление системного прокси отменено.', { cause: elevationError })
+      throw new Error(`Не удалось восстановить настройки прокси: ${text}`, {
+        cause: elevationError
+      })
     }
   }
-}
-
-/** Сетевые сервисы, кроме выключенных: у тех `networksetup` ставит «*» перед именем. */
-async function activeServices(): Promise<string[]> {
-  const stdout = await networksetup(['-listallnetworkservices'])
-  return stdout
-    .split('\n')
-    .slice(1) // первая строка — пояснение про звёздочку
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.startsWith('*'))
-}
-
-async function readServiceState(service: string): Promise<ServiceProxyState> {
-  const stdout = await networksetup(['-getsocksfirewallproxy', service])
-  const value = (key: string): string =>
-    new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(stdout)?.[1]?.trim() ?? ''
-
-  const bypassOutput = await networksetup(['-getproxybypassdomains', service])
-  // Пустой список macOS печатает фразой «There aren't any bypass domains…»,
-  // а в доменах пробелов не бывает — по этому и отличаем.
-  const bypass = bypassOutput
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !line.includes(' '))
-
-  return {
-    service,
-    enabled: value('Enabled').toLowerCase() === 'yes',
-    server: value('Server'),
-    port: value('Port'),
-    bypass
-  }
-}
-
-async function saveSnapshot(snapshot: ProxySnapshot): Promise<void> {
-  await writeFile(snapshotPath(), JSON.stringify(snapshot, null, 2), 'utf8')
 }
 
 async function loadSnapshot(): Promise<ProxySnapshot | null> {
@@ -126,26 +101,6 @@ async function restoreService(state: ServiceProxyState): Promise<void> {
   await networksetup(['-setproxybypassdomains', state.service, ...bypass])
 }
 
-/** Прописать socks-прокси во все активные сетевые сервисы, запомнив прежнее состояние. */
-export async function applySystemProxy(host: string, port: number): Promise<void> {
-  const services = await activeServices()
-  if (services.length === 0) throw new Error('Не найдено ни одного активного сетевого сервиса.')
-
-  // Снимок делаем до первой правки и сразу пишем на диск: если приложение
-  // упадёт посреди применения, следующий запуск сможет всё вернуть.
-  const snapshot: ProxySnapshot = {
-    takenAt: new Date().toISOString(),
-    services: await Promise.all(services.map(readServiceState))
-  }
-  await saveSnapshot(snapshot)
-
-  for (const service of services) {
-    await networksetup(['-setsocksfirewallproxy', service, host, String(port)])
-    await networksetup(['-setproxybypassdomains', service, ...BYPASS])
-    await networksetup(['-setsocksfirewallproxystate', service, 'on'])
-  }
-}
-
 /** Вернуть настройки прокси в состояние из снимка. Без снимка ничего не трогаем. */
 export async function restoreSystemProxy(): Promise<boolean> {
   const snapshot = await loadSnapshot()
@@ -159,7 +114,7 @@ export async function restoreSystemProxy(): Promise<boolean> {
 }
 
 /**
- * Снимок остался с прошлого запуска — значит приложение завершилось аварийно,
+ * Снимок остался с прошлого запуска старой версии — значит tpws завершился аварийно,
  * не сняв прокси, и система сейчас смотрит в несуществующий socks. Чиним на старте.
  */
 export async function hasStaleSnapshot(): Promise<boolean> {

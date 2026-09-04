@@ -22,8 +22,6 @@ export abstract class ZapretEngine {
       strategyId: defaultStrategyId,
       startedAt: null,
       error: null,
-      socksAddress: null,
-      systemProxyApplied: false,
       serviceInstalled: false,
       autoStart: false
     }
@@ -57,12 +55,6 @@ export abstract class ZapretEngine {
   /** Вызывается при выходе из приложения: вернуть систему в исходное состояние. */
   abstract dispose(): Promise<void>
 
-  /** macOS-специфика; на других платформах переопределять не нужно. */
-  async setSystemProxy(enabled: boolean): Promise<ZapretStatus> {
-    void enabled
-    throw new Error('Системный прокси на этой платформе не настраивается.')
-  }
-
   /**
    * Выключен — просто запоминаем выбор (никаких системных действий и никакого UAC).
    * Работает — перезапускаем с новой стратегией через `start()`; на Windows тот сам
@@ -76,7 +68,7 @@ export abstract class ZapretEngine {
     return this.start(strategyId)
   }
 
-  /** Windows-специфика (автозапуск службы); на других платформах переопределять не нужно. */
+  /** macOS/Windows-специфика (автозапуск демона/службы); на Linux переопределять не нужно. */
   async setAutoStart(enabled: boolean): Promise<ZapretStatus> {
     void enabled
     throw new Error('Автозапуск на этой платформе не настраивается.')

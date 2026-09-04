@@ -1,243 +1,155 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import type { Readable } from 'node:stream'
-import { createConnection, createServer } from 'node:net'
 import type { ZapretStatus } from '../../shared/ipc-contract'
 import { ZapretEngine } from './engine'
-import { assertExecutable, tpwsPath } from './paths'
-import { applySystemProxy, hasStaleSnapshot, restoreSystemProxy } from './proxy.darwin'
-import { defaultStrategyId, tpwsArgs } from './strategies'
+import { assertExecutable, utunwsPath } from './paths'
+import { defaultStrategyId, utunwsConfig } from './strategies'
+import {
+  assertMacosVersion,
+  dryRun,
+  readUtunwsState,
+  setUtunwsAutoStart,
+  startUtunws,
+  stopUtunws
+} from './utunws.darwin'
 
-const HOST = '127.0.0.1'
-const PREFERRED_PORT = 1080
-const READY_TIMEOUT_MS = 3000
-const STOP_TIMEOUT_MS = 3000
-
-/** Свободен ли порт на localhost. */
-function isPortFree(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const server = createServer()
-    server.once('error', () => resolve(false))
-    server.listen(port, HOST, () => server.close(() => resolve(true)))
-  })
-}
-
-async function pickPort(): Promise<number> {
-  for (let port = PREFERRED_PORT; port < PREFERRED_PORT + 20; port += 1) {
-    if (await isPortFree(port)) return port
-  }
-  throw new Error('Не нашлось свободного порта для socks-прокси.')
-}
-
-/** У tpws нет сигнала готовности — просто ждём, пока порт начнёт принимать соединения. */
-function canConnect(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = createConnection({ host: HOST, port })
-    const finish = (ok: boolean): void => {
-      socket.destroy()
-      resolve(ok)
-    }
-    socket.once('connect', () => finish(true))
-    socket.once('error', () => finish(false))
-  })
-}
-
-async function waitUntilReady(port: number, isAlive: () => boolean): Promise<void> {
-  const deadline = Date.now() + READY_TIMEOUT_MS
-
-  while (Date.now() < deadline) {
-    if (!isAlive()) return // процесс уже умер, ошибку соберёт вызывающий код
-    if (await canConnect(port)) return
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-
-  throw new Error(`tpws не начал слушать ${HOST}:${port} за ${READY_TIMEOUT_MS} мс.`)
-}
+/** Как часто опрашивать pidfile — демон нам не дочерний процесс, экзит-событие поймать некому. */
+const WATCH_INTERVAL_MS = 3000
 
 /**
- * macOS: tpws поднимается обычным пользовательским процессом в режиме socks5
- * (документация zapret: «Режим --socks не требует повышенных привилегий»),
- * а трафик заворачивается системной настройкой прокси.
- *
- * Важное ограничение платформы: tpws не умеет UDP, поэтому QUIC не обходится.
- * Практика это скрадывает — при системном socks-прокси браузеры сами уходят с QUIC на TCP.
+ * macOS: `utunws` (форк `nfqws` из Flowseal/zapret-mac-discord-youtube — тот же движок
+ * уровня пакетов, что winws и nfqws, но через utun+BPF вместо WinDivert/netfilter) под
+ * LaunchDaemon. Пароль администратора спрашивается ровно при двух действиях — включении и
+ * выключении обхода (`resources/darwin-helper/install.sh`/`stop.sh` через `osascript`),
+ * тот же принцип, что `pkexec` на Linux. Выключение полностью сносит установку (плист,
+ * strategy.cfg, pf-правила) — «выключено» и «не установлено» здесь одно состояние, поэтому
+ * `dispose()` не требуется останавливать демон: он живёт своей жизнью в системе, как и на
+ * Windows/Linux (если пользователь не тронул переключатель, обход продолжает работать
+ * после закрытия приложения).
  */
 export class DarwinEngine extends ZapretEngine {
-  private child: ChildProcessByStdio<null, Readable, Readable> | null = null
-  private port = PREFERRED_PORT
-  /** Просили ли включить системный прокси. Переживает перезапуск tpws. */
-  private wantSystemProxy = true
+  private watchTimer: ReturnType<typeof setInterval> | null = null
 
   constructor() {
-    super('tpws-socks', defaultStrategyId('darwin'))
+    super('utunws-pf', defaultStrategyId('darwin'))
+    // Решение по умолчанию для первой установки — то же, что у Win32Engine: обход должен
+    // работать и после перезагрузки, не дожидаясь запуска приложения.
+    this.status.autoStart = true
   }
 
   /**
-   * Прошлый запуск мог не снять прокси (например, kill -9). Тогда система смотрит
-   * в мёртвый socks и интернета нет вовсе — чиним до того, как показать окно.
+   * Вызывается из `recoverZapret()` до открытия окна — подхватывает LaunchDaemon,
+   * переживший закрытие приложения (RunAtLoad+KeepAlive держит его живым и через
+   * перезагрузку системы), тот же принцип, что `Win32Engine.sync()`/`LinuxEngine.sync()`.
    */
-  async recoverFromCrash(): Promise<void> {
-    if (!(await hasStaleSnapshot())) return
+  async sync(): Promise<ZapretStatus> {
+    const { pid, strategyId, autoStart } = await readUtunwsState()
 
-    this.appendLog(
-      'info',
-      'Найдены незакрытые настройки прокси от прошлого запуска — восстанавливаю.'
-    )
-    try {
-      await restoreSystemProxy()
-    } catch (error) {
-      this.appendLog('error', error instanceof Error ? error.message : String(error))
+    if (pid === null) {
+      this.stopWatch()
+      return this.patch({ state: 'stopped', startedAt: null, error: null })
     }
+
+    this.startWatch()
+    return this.patch({
+      state: 'running',
+      strategyId: strategyId ?? this.status.strategyId,
+      // Реальное состояние демона важнее сохранённого приложением выбора — тот же принцип,
+      // что у Win32Engine.sync() с info.startMode.
+      autoStart: autoStart ?? this.status.autoStart,
+      // Момент реального запуска нам не известен — демон мог подняться ещё при загрузке
+      // системы, до старта приложения. Тот же компромисс, что и в остальных движках.
+      startedAt: new Date().toISOString(),
+      error: null
+    })
   }
 
   async start(strategyId: string): Promise<ZapretStatus> {
-    if (this.child) await this.stop()
-
-    const binary = tpwsPath()
-    await assertExecutable(binary)
-
     this.patch({ state: 'starting', strategyId, error: null })
 
     try {
-      this.port = await pickPort()
-      const child = spawn(binary, tpwsArgs(strategyId, this.port), {
-        stdio: ['ignore', 'pipe', 'pipe']
-      })
-      this.child = child
+      // Всё, что можно проверить без пароля, проверяем в этом порядке: сначала формат
+      // самой стратегии, потом версию системы, потом сами аргументы через --dry-run — тот
+      // же принцип, что и у LinuxEngine.start(), единственный шанс не побеспокоить
+      // пользователя диалогом авторизации ради заведомо неверных данных.
+      const config = utunwsConfig(strategyId)
+      assertMacosVersion()
+      await assertExecutable(utunwsPath())
+      await dryRun(config.body)
 
-      // Вывод tpws идёт в stderr целиком, включая обычные сообщения о старте.
-      child.stdout.setEncoding('utf8')
-      child.stderr.setEncoding('utf8')
-      child.stdout.on('data', (chunk: string) => this.appendLog('info', chunk))
-
-      let stderrTail = ''
-      child.stderr.on('data', (chunk: string) => {
-        stderrTail = `${stderrTail}${chunk}`.slice(-2000)
-        this.appendLog('info', chunk)
-      })
-
-      child.on('exit', (code, signal) => {
-        this.child = null
-        // Плановую остановку обрабатывает stop(), здесь ловим только падение.
-        if (this.status.state === 'stopping' || this.status.state === 'stopped') return
-        void this.handleCrash(code, signal, stderrTail)
+      await startUtunws({
+        configBody: config.body,
+        tcpPorts: config.tcpPorts,
+        udpPorts: config.udpPorts,
+        autoStart: this.status.autoStart
       })
 
-      await waitUntilReady(this.port, () => this.child !== null)
+      const { pid } = await readUtunwsState()
+      if (pid !== null) this.startWatch()
 
-      if (!this.child) {
-        throw new Error(stderrTail.trim() || 'tpws завершился сразу после запуска.')
-      }
-
-      if (this.wantSystemProxy) {
-        await applySystemProxy(HOST, this.port)
-      }
-
-      return this.patch({
-        state: 'running',
-        startedAt: new Date().toISOString(),
-        error: null,
-        socksAddress: `${HOST}:${this.port}`,
-        systemProxyApplied: this.wantSystemProxy
-      })
+      return this.patch({ state: 'running', startedAt: new Date().toISOString(), error: null })
     } catch (error) {
-      await this.cleanup()
       const message = error instanceof Error ? error.message : String(error)
       this.appendLog('error', message)
-      return this.patch({
-        state: 'error',
-        error: message,
-        startedAt: null,
-        socksAddress: null,
-        systemProxyApplied: false
-      })
+      return this.patch({ state: 'error', error: message, startedAt: null })
     }
   }
 
   async stop(): Promise<ZapretStatus> {
-    if (!this.child && !this.status.systemProxyApplied) {
-      return this.patch({ state: 'stopped', startedAt: null, socksAddress: null })
-    }
-
     this.patch({ state: 'stopping' })
-    await this.cleanup()
-
-    return this.patch({
-      state: 'stopped',
-      startedAt: null,
-      error: null,
-      socksAddress: null,
-      systemProxyApplied: false
-    })
-  }
-
-  async setSystemProxy(enabled: boolean): Promise<ZapretStatus> {
-    this.wantSystemProxy = enabled
-
-    // Пока обход выключен, менять нечего — запомнили выбор и всё.
-    if (this.status.state !== 'running') return this.patch({ systemProxyApplied: false })
-
-    if (enabled) {
-      await applySystemProxy(HOST, this.port)
-    } else {
-      await restoreSystemProxy()
+    this.stopWatch()
+    try {
+      await stopUtunws()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.appendLog('error', message)
+      return this.patch({ state: 'error', error: message })
     }
-    return this.patch({ systemProxyApplied: enabled })
-  }
-
-  async dispose(): Promise<void> {
-    await this.cleanup()
+    return this.patch({ state: 'stopped', startedAt: null, error: null })
   }
 
   /**
-   * Порядок важен: сначала снимаем прокси, потом гасим tpws. Наоборот нельзя —
-   * между шагами система осталась бы с прокси, который уже никто не слушает.
+   * Только RunAtLoad уже установленного LaunchDaemon — если демона ещё нет, лишь запоминаем
+   * выбор до первого включения (никакого диалога авторизации на пустом месте), тот же
+   * принцип, что у `Win32Engine.setAutoStart()`.
    */
-  private async cleanup(): Promise<void> {
-    try {
-      await restoreSystemProxy()
-    } catch (error) {
-      this.appendLog('error', error instanceof Error ? error.message : String(error))
+  async setAutoStart(enabled: boolean): Promise<ZapretStatus> {
+    if (this.status.state !== 'running') {
+      return this.patch({ autoStart: enabled })
     }
-
-    const child = this.child
-    if (!child) return
-    this.child = null
-
-    child.kill('SIGTERM')
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL')
-        resolve()
-      }, STOP_TIMEOUT_MS)
-
-      child.once('exit', () => {
-        clearTimeout(timer)
-        resolve()
-      })
-    })
+    await setUtunwsAutoStart(enabled)
+    return this.patch({ autoStart: enabled })
   }
 
-  private async handleCrash(
-    code: number | null,
-    signal: NodeJS.Signals | null,
-    stderrTail: string
-  ): Promise<void> {
-    const reason = signal ? `сигнал ${signal}` : `код ${code}`
-    const details = stderrTail.trim().split('\n').slice(-3).join(' ')
+  async dispose(): Promise<void> {
+    // LaunchDaemon живёт своей жизнью в системе — выход приложения его не останавливает
+    // (см. комментарий класса). Опрос pidfile всё равно больше не нужен.
+    this.stopWatch()
+  }
 
-    // Прокси обязательно снять: иначе система указывает на мёртвый socks и сети не будет.
-    try {
-      await restoreSystemProxy()
-    } catch (error) {
-      this.appendLog('error', error instanceof Error ? error.message : String(error))
-    }
+  /**
+   * Демон нам не дочерний процесс (владеет им launchd, а не Electron) — событие завершения
+   * поймать некому, поэтому опрашиваем pidfile по таймеру, как и `LinuxEngine`. В отличие
+   * от Linux pid здесь может смениться без нашего участия: `daemon.sh` перезапускает
+   * utunws заново при смене сети (новый шлюз), поэтому pidfile перечитываем на каждом тике,
+   * а не держим захваченный при старте pid.
+   */
+  private startWatch(): void {
+    this.stopWatch()
+    this.watchTimer = setInterval(() => {
+      void readUtunwsState().then(({ pid: currentPid }) => {
+        if (currentPid !== null || this.status.state !== 'running') return
+        this.stopWatch()
+        this.appendLog('error', 'utunws больше не запущен')
+        this.patch({
+          state: 'error',
+          error: 'Процесс utunws неожиданно завершился.',
+          startedAt: null
+        })
+      })
+    }, WATCH_INTERVAL_MS)
+  }
 
-    this.patch({
-      state: 'error',
-      error: `tpws неожиданно завершился (${reason}). ${details}`.trim(),
-      startedAt: null,
-      socksAddress: null,
-      systemProxyApplied: false
-    })
+  private stopWatch(): void {
+    if (this.watchTimer) clearInterval(this.watchTimer)
+    this.watchTimer = null
   }
 }

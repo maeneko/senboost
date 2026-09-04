@@ -24,9 +24,11 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml,yarn.lock}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!.github/*'
-  # zapret и linux-helper идут отдельно через extraResources ниже — не дублировать их в app.asar.
+  # zapret и linux-helper/darwin-helper идут отдельно через extraResources ниже — не
+  # дублировать их в app.asar.
   - '!resources/zapret/**'
   - '!resources/linux-helper/**'
+  - '!resources/darwin-helper/**'
 asarUnpack:
   - 'resources/**'
 
@@ -97,6 +99,10 @@ nsis:
 
 mac:
   category: public.app-category.productivity
+  # utunws (форк nfqws под utun+BPF, см. src/main/zapret/engine.darwin.ts) собран под
+  # -target …-macos14.0 в самом релизе Flowseal/zapret-mac-discord-youtube — на более
+  # старой системе он не запустится, минимум объявляем и на уровне инсталлятора.
+  minimumSystemVersion: '14.0'
   target:
     - target: dmg
       arch: [x64, arm64]
@@ -105,16 +111,22 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   hardenedRuntime: true
-  # tpws — сторонний Mach-O внутри .app; hardened runtime требует, чтобы electron-builder
+  # utunws — сторонний Mach-O внутри .app; hardened runtime требует, чтобы electron-builder
   # подписал и его тем же Developer ID, иначе Gatekeeper убьёт процесс при первом spawn.
   binaries:
-    - Contents/Resources/zapret/darwin/tpws
+    - Contents/Resources/zapret/darwin/utunws
   # Подпись и нотаризация выключены: без Apple Developer ID сборка иначе падает.
   # Как включить — см. раздел «Подпись» в README.md.
   notarize: false
   extraResources:
     - from: resources/zapret/darwin
       to: zapret/darwin
+    # install.sh/stop.sh/daemon.sh/watchdog.sh/autostart.sh — привилегированные скрипты,
+    # запускаются через osascript "with administrator privileges" (elevate.darwin.ts).
+    # Не из resources/zapret: тот качает fetch-zapret.mjs, а этот каталог — свой, лежит
+    # в репозитории (см. src/main/zapret/paths.ts:bundledDarwinHelperDir()).
+    - from: resources/darwin-helper
+      to: darwin-helper
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
 

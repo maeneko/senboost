@@ -13,9 +13,9 @@ function zapretRoot(): string {
     : resolve(app.getAppPath(), 'resources', 'zapret')
 }
 
-/** macOS: universal-бинарник tpws (arm64 + x86_64). */
-export function tpwsPath(): string {
-  return join(zapretRoot(), 'darwin', 'tpws')
+/** macOS: universal-бинарник utunws (arm64 + x86_64), форк nfqws под utun+BPF. */
+export function utunwsPath(): string {
+  return join(zapretRoot(), 'darwin', 'utunws')
 }
 
 /** Windows: winws.exe рядом с cygwin1.dll и WinDivert. */
@@ -88,6 +88,67 @@ export function linuxInstalledConfigPath(): string {
   return join(linuxRuntimeDir(), 'strategy.cfg')
 }
 
+/**
+ * macOS: привилегированные скрипты в составе сборки (`resources/darwin-helper/`, отдельный
+ * `extraResources` в electron-builder.yml — не качается `fetch-zapret.mjs`, лежит в
+ * репозитории, тот же принцип, что и `bundledHelperPath()` для Linux).
+ */
+export function bundledDarwinHelperDir(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'darwin-helper')
+    : resolve(app.getAppPath(), 'resources', 'darwin-helper')
+}
+
+export function darwinInstallScriptPath(): string {
+  return join(bundledDarwinHelperDir(), 'install.sh')
+}
+
+export function darwinStopScriptPath(): string {
+  return join(bundledDarwinHelperDir(), 'stop.sh')
+}
+
+export function darwinAutostartScriptPath(): string {
+  return join(bundledDarwinHelperDir(), 'autostart.sh')
+}
+
+/**
+ * macOS: каталог, куда `install.sh` копирует utunws, daemon.sh/watchdog.sh, fake-пакеты и
+ * strategy.cfg — свой пользовательский `resources/zapret` для этого не годится: root
+ * (`daemon.sh` под launchd) не должен исполнять файлы из каталога, доступного на запись
+ * обычному пользователю (то же рассуждение, что у `protectedWinwsPath()` на Windows).
+ */
+export function darwinInstallDir(): string {
+  return '/Library/Application Support/RKNboost/zapret'
+}
+
+/** Стейджинговая копия `fakesDir()` — то же назначение, что `stagedFakesDir()` на Linux. */
+export function darwinInstalledFakesDir(): string {
+  return join(darwinInstallDir(), 'fakes')
+}
+
+/** Источник маркера стратегии для `DarwinEngine.sync()` — читается без root (0644). */
+export function darwinInstalledConfigPath(): string {
+  return join(darwinInstallDir(), 'strategy.cfg')
+}
+
+/** Порты TCP/UDP (по строке на каждый) — их же читает `daemon.sh` при заряде pf-правил. */
+export function darwinPortsPath(): string {
+  return join(darwinInstallDir(), 'ports.conf')
+}
+
+/**
+ * `utunws --pidfile=...` пишет сюда свой pid до начала работы (см. `daemon.sh`) — читается
+ * без root, тот же принцип, что у `linuxPidfilePath()`. `/var/run` — не `/run/rknboost`
+ * (Linux-путь): на macOS это симлинк на `/private/var/run`, а не отдельная точка монтирования.
+ */
+export function darwinPidfilePath(): string {
+  return '/var/run/rknboost-zapret.pid'
+}
+
+export function darwinPlistPath(): string {
+  return '/Library/LaunchDaemons/com.rknboost.zapret.plist'
+}
+
 /** Встроенные списки (из Flowseal/zapret-discord-youtube, см. scripts/fetch-zapret.mjs) — только для чтения. */
 export function bundledListsDir(): string {
   return join(zapretRoot(), 'lists')
@@ -105,11 +166,14 @@ export function userListsDir(): string {
 /**
  * Fake-пакеты (TLS ClientHello, QUIC initial, ...) — путь, который резолвится в
  * `{FAKES}` (`strategies.ts`) и должен суметь прочитать сам движок при работе, не только
- * при запуске. На Linux это стейджинговая копия (`stagedFakesDir()`) — см. её комментарий
- * про FUSE; на остальных платформах движок и так работает под тем же uid, что видит сборку.
+ * при запуске. На Linux это стейджинговая копия (`stagedFakesDir()`, см. её комментарий про
+ * FUSE), на macOS — установленная копия под root (`darwinInstalledFakesDir()`, см. её
+ * комментарий); на Windows движок работает под тем же uid, что видит сборку приложения.
  */
 export function fakesDir(): string {
-  return process.platform === 'linux' ? stagedFakesDir() : join(zapretRoot(), 'fakes')
+  if (process.platform === 'linux') return stagedFakesDir()
+  if (process.platform === 'darwin') return darwinInstalledFakesDir()
+  return join(zapretRoot(), 'fakes')
 }
 
 /**
@@ -150,15 +214,6 @@ export const SERVICE_BINARY_NAMES = [
  */
 export function protectedWinwsPath(): string {
   return join(serviceDataDir(), 'winws.exe')
-}
-
-/**
- * Список, который zapret пополняет сам (`--hostlist-auto`): при похожей на блокировку
- * ошибке домен дописывается сюда и на лету попадает под десинк, без участия пользователя.
- * Не входит в `ZapretListId` — это нередактируемый журнал находок, а не список на правку.
- */
-export function autoHostlistPath(): string {
-  return join(userListsDir(), 'auto.txt')
 }
 
 /**

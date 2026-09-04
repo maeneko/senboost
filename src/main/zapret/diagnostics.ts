@@ -1,16 +1,9 @@
-import { connect as netConnect, type Socket } from 'node:net'
-import { connect as tlsConnect } from 'node:tls'
 import { net } from 'electron'
-import type {
-  ZapretDiagnosticResult,
-  ZapretDiagnosticTarget,
-  ZapretStatus
-} from '../../shared/ipc-contract'
+import type { ZapretDiagnosticResult, ZapretDiagnosticTarget } from '../../shared/ipc-contract'
 
 // 6 секунд не хватало: десинк с `--dpi-desync-repeats` заметно удлиняет установку соединения,
 // и медленный, но живой сайт успевал попасть в «Недоступно».
 const TIMEOUT_MS = 10000
-const TARGET_PORT = 443
 const RETRY_DELAY_MS = 300
 
 /** Сайты, которые нужно проверять в первую очередь — по просьбе пользователя. */
@@ -41,43 +34,11 @@ function describeNetError(message: string): string {
 }
 
 /**
- * SOCKS5 CONNECT без авторизации — ровно то, что понимает tpws в режиме `--socks`.
- * Три сообщения: приветствие (метод «без авторизации»), запрос на домен, ответ сервера.
- */
-function socksConnect(socket: Socket, host: string, port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const hostBuf = Buffer.from(host, 'utf8')
-
-    socket.once('data', (greeting: Buffer) => {
-      if (greeting[0] !== 0x05 || greeting[1] !== 0x00) {
-        reject(new Error('SOCKS5: сервер отклонил метод авторизации'))
-        return
-      }
-
-      socket.once('data', (reply: Buffer) => {
-        if (reply[1] !== 0x00) {
-          reject(new Error(`SOCKS5: код ошибки 0x${reply[1].toString(16)}`))
-          return
-        }
-        resolve()
-      })
-
-      socket.write(
-        Buffer.concat([
-          Buffer.from([0x05, 0x01, 0x00, 0x03, hostBuf.length]),
-          hostBuf,
-          Buffer.from([port >> 8, port & 0xff])
-        ])
-      )
-    })
-
-    socket.write(Buffer.from([0x05, 0x01, 0x00]))
-  })
-}
-
-/**
- * Прямая проверка — путь для Windows (десинк общесистемный, через WinDivert) и для
- * выключенного обхода.
+ * Единственный путь проверки на всех трёх платформах: десинк везде общесистемный —
+ * winws через WinDivert, nfqws через nftables/NFQUEUE, utunws через pf/utun (см.
+ * `engine.*.ts`) — прямой запрос видит его так же, как и обычный браузерный трафик.
+ * Раньше на macOS был отдельный путь через локальный SOCKS5 (`tpws --socks`), но новый
+ * движок `utunws` — не прокси, трафик десинхронизируется до того, как уйдёт в сеть.
  *
  * Намеренно через `net` Electron, то есть через сетевой стек Chromium, а НЕ через
  * `node:tls`. Тест должен отвечать на вопрос «откроется ли этот сайт в браузере», а
@@ -118,35 +79,6 @@ function checkDirect(host: string): Promise<number> {
   })
 }
 
-/** Тот же успех, но через локальный SOCKS5 tpws — путь для macOS, пока обход включён. */
-function checkViaSocks(host: string, socksHost: string, socksPort: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const start = Date.now()
-    const socket = netConnect({ host: socksHost, port: socksPort })
-    let settled = false
-
-    const finish = (error: Error | null): void => {
-      if (settled) return
-      settled = true
-      socket.destroy()
-      if (error) reject(error)
-      else resolve(Date.now() - start)
-    }
-
-    socket.setTimeout(TIMEOUT_MS, () => finish(new Error(`Таймаут ${TIMEOUT_MS} мс`)))
-    socket.once('error', finish)
-    socket.once('connect', () => {
-      socksConnect(socket, host, TARGET_PORT)
-        .then(() => {
-          const tlsSocket = tlsConnect({ socket, servername: host })
-          tlsSocket.once('secureConnect', () => finish(null))
-          tlsSocket.once('error', finish)
-        })
-        .catch(finish)
-    })
-  })
-}
-
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -171,11 +103,6 @@ async function withRetry(attempt: () => Promise<number>): Promise<number> {
  * Успех означает «до сайта дошли и он ответил» — этого достаточно, чтобы отличить
  * «DPI оборвал соединение» от «соединение установилось», разбирать ответ незачем.
  *
- * `status.socksAddress` заполнен только на macOS и только пока обход запущен — во всех
- * остальных случаях (Windows, обход выключен, платформа не поддерживается) бьём напрямую:
- * на Windows десинк уже общесистемный через WinDivert, а без обхода тест просто показывает
- * то, что есть сейчас.
- *
  * Каждый сайт отдаёт свой результат в `onResult` сам по себе, не дожидаясь остальных:
  * проверки идут параллельно и заканчиваются вразнобой (живой сайт отвечает за десятки
  * миллисекунд, заблокированный — только по таймауту в 10 с), и общий ответ одним куском
@@ -183,20 +110,12 @@ async function withRetry(attempt: () => Promise<number>): Promise<number> {
  * по нему вызывающий код понимает, что проверка закончена.
  */
 export async function runDiagnostics(
-  status: ZapretStatus,
   onResult: (result: ZapretDiagnosticResult) => void
 ): Promise<void> {
-  const socksMatch = status.socksAddress ? /^(.+):(\d+)$/.exec(status.socksAddress) : null
-
   await Promise.all(
     DIAGNOSTIC_TARGETS.map(async (target) => {
-      const attempt = (): Promise<number> =>
-        socksMatch
-          ? checkViaSocks(target.host, socksMatch[1], Number(socksMatch[2]))
-          : checkDirect(target.host)
-
       try {
-        const ms = await withRetry(attempt)
+        const ms = await withRetry(() => checkDirect(target.host))
         onResult({ ...target, ok: true, ms, error: null })
       } catch (error) {
         onResult({

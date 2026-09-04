@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ZapretStrategy } from '../../shared/ipc-contract'
-import { autoHostlistPath, fakesDir, userListsDir } from './paths'
+import { fakesDir, userListsDir } from './paths'
 import { WIN32_STRATEGIES } from './strategies.win32.generated'
 
 /**
@@ -9,166 +9,38 @@ import { WIN32_STRATEGIES } from './strategies.win32.generated'
  * Универсального набора параметров не существует: что сработает, зависит от DPI
  * конкретного провайдера.
  *
- * `tpws` (macOS) — прокси уровня TCP-соединений, а не пакетов: умеет только резать/
- * переупорядочивать сегменты (`--split-pos`, `--disorder`, `--oob`, `--tlsrec`), но не
- * умеет ни fake-пакетов, ни UDP/QUIC вообще. Профили ниже — свои, под это ограничение.
+ * `winws` (Windows), `nfqws` (Linux) и `utunws` (macOS) — один и тот же движок zapret на
+ * уровне пакетов с общим парсером аргументов (winws — сборка `nfq/nfqws.c` под WinDivert
+ * вместо netfilter, utunws — та же сборка под utun+BPF, см. Flowseal/zapret-mac-discord-
+ * youtube), поэтому все три платформы делят один набор пресетов — 22 варианта из
+ * Flowseal/zapret-discord-youtube, перенесённые в `strategies.win32.generated.ts`
+ * генератором `scripts/parser-strategies.mjs` (не батниками — кодом).
  *
- * `winws` (Windows) и `nfqws` (Linux) — один и тот же движок zapret на уровне пакетов
- * (winws — сборка nfq/nfqws.c под WinDivert вместо netfilter), поэтому делят один набор
- * пресетов — 22 варианта из Flowseal/zapret-discord-youtube, перенесённые в
- * `strategies.win32.generated.ts` генератором `scripts/import-flowseal-strategies.mjs`
- * (не батниками — кодом). На Linux `--wf-tcp`/`--wf-udp` из тех же аргументов уходят не в
- * nfqws, а в правила nftables — см. `nfqwsConfig()` ниже и `resources/linux-helper/`.
+ * `--wf-tcp`/`--wf-udp` из тех же аргументов сам движок понимает только на Windows
+ * (фильтр WinDivert); на Linux и macOS фильтрацию делает внешний слой — nftables и pf
+ * соответственно, — а сами порты вырезаются из аргументов и отдаются вызывающей стороне
+ * отдельно, см. `packetEngineConfig()` ниже, `resources/linux-helper/` и
+ * `resources/darwin-helper/`.
  *
  * Все три движка используют одни и те же списки сайтов (`src/main/zapret/lists.ts`):
  * `{LISTS}/<id>.txt` — путь резолвится в `resolvePlaceholders()` ниже.
  */
-interface DarwinStrategyDefinition extends ZapretStrategy {
-  /** Аргументы tpws после общих `--socks --port=...`; плейсхолдеры ещё не резолвлены. */
-  tpws: string[]
-}
 
 const LISTS_PLACEHOLDER = '{LISTS}'
 const FAKES_PLACEHOLDER = '{FAKES}'
-const AUTO_PLACEHOLDER = '{AUTO}'
 
-/** `--hostlist-auto` заставляет zapret самому копить сюда домены, похожие на заблокированные. */
-const AUTO_HOSTLIST_ARGS = [`--hostlist-auto=${AUTO_PLACEHOLDER}`]
-
-const DARWIN_DEFINITIONS: DarwinStrategyDefinition[] = [
-  {
-    id: 'split',
-    name: 'Разрез + переупорядочивание',
-    description: 'Базовый вариант из поставки zapret: разрез TLS ClientHello по середине SNI.',
-    platforms: ['darwin'],
-    tpws: [
-      '--filter-tcp=80',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      '--methodeol',
-      '--new',
-      '--filter-tcp=443',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      ...AUTO_HOSTLIST_ARGS,
-      '--split-pos=1,midsld',
-      '--disorder'
-    ]
-  },
-  {
-    id: 'multisplit',
-    name: 'Многократный разрез',
-    description: 'Больше точек разреза. Помогает, когда DPI склеивает сегменты обратно.',
-    platforms: ['darwin'],
-    tpws: [
-      '--filter-tcp=80',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      '--methodeol',
-      '--new',
-      '--filter-tcp=443',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      ...AUTO_HOSTLIST_ARGS,
-      // --oob здесь не добавляем: tpws отказывается совмещать его с --disorder вне Linux.
-      '--split-pos=1,midsld,host+1',
-      '--disorder'
-    ]
-  },
-  {
-    id: 'tlsrec',
-    name: 'Разрез TLS-записи',
-    description: 'Другой способ разреза (--tlsrec) — стоит попробовать, если «Разрез» не помогает.',
-    platforms: ['darwin'],
-    tpws: [
-      '--filter-tcp=80',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      '--methodeol',
-      '--new',
-      '--filter-tcp=443',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      ...AUTO_HOSTLIST_ARGS,
-      '--split-pos=1',
-      '--tlsrec=midsld'
-    ]
-  },
-  {
-    id: 'oob',
-    name: 'Разрез с OOB-байтом',
-    description: 'Внеполосный байт вместо переупорядочивания — третий вариант на выбор.',
-    platforms: ['darwin'],
-    tpws: [
-      '--filter-tcp=80',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      '--methodeol',
-      '--new',
-      '--filter-tcp=443',
-      `--hostlist=${LISTS_PLACEHOLDER}/general.txt`,
-      `--hostlist=${LISTS_PLACEHOLDER}/google.txt`,
-      `--hostlist-exclude=${LISTS_PLACEHOLDER}/exclude.txt`,
-      ...AUTO_HOSTLIST_ARGS,
-      '--split-pos=1,midsld',
-      '--oob'
-    ]
-  },
-  {
-    id: 'all-traffic',
-    name: 'Весь трафик, без списков',
-    description:
-      'Разрез применяется ко всем сайтам, а не только из списка «Обходить». Диагностика.',
-    platforms: ['darwin'],
-    tpws: [
-      '--filter-tcp=80',
-      '--methodeol',
-      '--new',
-      '--filter-tcp=443',
-      '--split-pos=1,midsld',
-      '--disorder'
-    ]
-  },
-  {
-    id: 'passthrough',
-    name: 'Без изменения трафика',
-    description:
-      'Прокси работает, но пакеты не трогает. Нужен, чтобы отделить проблемы сети от стратегии.',
-    platforms: ['darwin'],
-    tpws: []
-  }
-]
-
-/**
- * Стратегия по умолчанию. win32 и linux делят один набор id (оба читают
- * `WIN32_STRATEGIES`), поэтому и дефолт у них общий — 'general'; у darwin свой набор.
- */
+/** Все три платформы делят один набор id (все читают `WIN32_STRATEGIES`), поэтому и дефолт общий. */
 export function defaultStrategyId(platform: NodeJS.Platform): string {
-  switch (platform) {
-    case 'win32':
-    case 'linux':
-      return 'general'
-    default:
-      return 'split'
-  }
+  void platform
+  return 'general'
 }
 
 function resolvePlaceholders(arg: string): string {
-  return arg
-    .replaceAll(LISTS_PLACEHOLDER, userListsDir())
-    .replaceAll(FAKES_PLACEHOLDER, fakesDir())
-    .replaceAll(AUTO_PLACEHOLDER, autoHostlistPath())
+  return arg.replaceAll(LISTS_PLACEHOLDER, userListsDir()).replaceAll(FAKES_PLACEHOLDER, fakesDir())
 }
 
-/** win32 и linux показывают один и тот же список Flowseal-пресетов — читают его из общего массива. */
-function flowsealStrategies(platform: 'win32' | 'linux'): ZapretStrategy[] {
+/** win32, linux и darwin показывают один и тот же список Flowseal-пресетов. */
+function flowsealStrategies(platform: 'win32' | 'linux' | 'darwin'): ZapretStrategy[] {
   return WIN32_STRATEGIES.map(({ id, name }) => ({
     id,
     name,
@@ -180,34 +52,10 @@ function flowsealStrategies(platform: 'win32' | 'linux'): ZapretStrategy[] {
 
 /** Пресеты, применимые к текущей платформе. */
 export function listStrategies(platform: NodeJS.Platform): ZapretStrategy[] {
-  if (platform === 'darwin') {
-    return DARWIN_DEFINITIONS.map(({ id, name, description, platforms }) => ({
-      id,
-      name,
-      description,
-      platforms
-    }))
-  }
+  if (platform === 'darwin') return flowsealStrategies('darwin')
   if (platform === 'win32') return flowsealStrategies('win32')
   if (platform === 'linux') return flowsealStrategies('linux')
   return []
-}
-
-function findDarwin(strategyId: string): DarwinStrategyDefinition {
-  const strategy = DARWIN_DEFINITIONS.find((item) => item.id === strategyId)
-  if (!strategy) throw new Error(`Неизвестная стратегия: ${strategyId}`)
-  return strategy
-}
-
-/** Полная командная строка tpws в режиме socks5 на localhost. */
-export function tpwsArgs(strategyId: string, port: number): string[] {
-  return [
-    '--socks',
-    `--port=${port}`,
-    '--bind-addr=127.0.0.1',
-    '--maxconn=512',
-    ...findDarwin(strategyId).tpws.map(resolvePlaceholders)
-  ]
 }
 
 /** Аргументы winws — служба читает их из файла как `winws.exe @strategy.txt`. */
@@ -283,23 +131,24 @@ export function winwsConfigFile(strategyId: string): EngineConfig {
 const WF_TCP_PREFIX = '--wf-tcp='
 const WF_UDP_PREFIX = '--wf-udp='
 
-export interface NfqwsConfig extends EngineConfig {
-  /** Порты для правила nftables `post` (исходящий трафик) — см. `rknboost-helper.sh`. */
+export interface PacketEngineConfig extends EngineConfig {
+  /** Порты TCP из `--wf-tcp`, формат `80,443,8443` — см. вызывающую сторону за смыслом. */
   tcpPorts: string
-  /** Порты для правил nftables `post`/`pre` (исходящий и ответный UDP). */
+  /** Порты UDP из `--wf-udp`, тот же формат. */
   udpPorts: string
 }
 
 /**
  * На Windows `--wf-tcp`/`--wf-udp` — это фильтр самого WinDivert, зашитый в те же аргументы
- * winws. На Linux фильтрацию делает nftables снаружи nfqws (см. `rknboost-helper.sh`), а
- * сам nfqws эти два аргумента не понимает — вырезаем их и отдаём отдельно вызывающей стороне.
+ * winws. На Linux и macOS фильтрацию делает внешний слой — nftables (`rknboost-helper.sh`)
+ * и pf (`resources/darwin-helper/daemon.sh`) соответственно, — а сам движок (nfqws/utunws)
+ * эти два аргумента не понимает: вырезаем их и отдаём отдельно вызывающей стороне.
  */
-export function nfqwsConfig(strategyId: string): NfqwsConfig {
+export function packetEngineConfig(strategyId: string): PacketEngineConfig {
   const args = winwsArgs(strategyId)
   let tcpPorts: string | null = null
   let udpPorts: string | null = null
-  const nfqwsArgs: string[] = []
+  const engineArgs: string[] = []
 
   for (const arg of args) {
     if (arg.startsWith(WF_TCP_PREFIX)) {
@@ -307,21 +156,21 @@ export function nfqwsConfig(strategyId: string): NfqwsConfig {
     } else if (arg.startsWith(WF_UDP_PREFIX)) {
       udpPorts = arg.slice(WF_UDP_PREFIX.length)
     } else {
-      nfqwsArgs.push(arg)
+      engineArgs.push(arg)
     }
   }
 
   // На всех 22 стратегиях сейчас ровно по одному --wf-tcp/--wf-udp (проверено вручную при
   // добавлении Linux), но если очередной апдейт Flowseal формат изменит — лучше явная ошибка
-  // здесь, чем nftables-правило без портов.
+  // здесь, чем правило фильтрации без портов.
   if (tcpPorts === null || udpPorts === null) {
     throw new Error(`Стратегия «${strategyId}»: не найден --wf-tcp/--wf-udp в аргументах.`)
   }
 
-  // Значение уходит прямо в множество nft-правила (rknboost-helper.sh) без дополнительного
-  // экранирования — только цифры, запятые и дефисы диапазонов. Если Flowseal когда-нибудь
-  // передаст что-то ещё (например, `~` — отрицание порта), лучше явная ошибка тут, чем
-  // нераспознанный текст в командной строке nft, которую выполняет root.
+  // Значение уходит прямо в правило nftables (rknboost-helper.sh) или pf (daemon.sh) без
+  // дополнительного экранирования — только цифры, запятые и дефисы диапазонов. Если Flowseal
+  // когда-нибудь передаст что-то ещё (например, `~` — отрицание порта), лучше явная ошибка
+  // тут, чем нераспознанный текст в командной строке nft/pfctl, которую выполняет root.
   for (const [flag, ports] of [
     ['--wf-tcp', tcpPorts],
     ['--wf-udp', udpPorts]
@@ -331,5 +180,30 @@ export function nfqwsConfig(strategyId: string): NfqwsConfig {
     }
   }
 
-  return { ...renderConfigFile(strategyId, nfqwsArgs), tcpPorts, udpPorts }
+  return { ...renderConfigFile(strategyId, engineArgs), tcpPorts, udpPorts }
+}
+
+/** Тонкая обёртка для читаемости на стороне вызова — семантически то же самое. */
+export function nfqwsConfig(strategyId: string): PacketEngineConfig {
+  return packetEngineConfig(strategyId)
+}
+
+export interface UtunwsConfig extends EngineConfig {
+  /** Порты TCP в синтаксисе диапазонов pf: `80,443,19294:19344` (везде `:` вместо `-`). */
+  tcpPorts: string
+  /** Порты UDP, тот же синтаксис. */
+  udpPorts: string
+}
+
+/** `19294-19344` (формат nftables/WinDivert) → `19294:19344` (формат диапазона в pf). */
+function toPfPortRanges(ports: string): string {
+  return ports
+    .split(',')
+    .map((part) => part.replace('-', ':'))
+    .join(',')
+}
+
+export function utunwsConfig(strategyId: string): UtunwsConfig {
+  const { tcpPorts, udpPorts, ...rest } = packetEngineConfig(strategyId)
+  return { ...rest, tcpPorts: toPfPortRanges(tcpPorts), udpPorts: toPfPortRanges(udpPorts) }
 }

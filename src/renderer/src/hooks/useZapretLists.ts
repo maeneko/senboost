@@ -2,29 +2,22 @@ import { useCallback, useEffect, useState } from 'react'
 import type { ZapretList, ZapretListId } from '@shared/ipc-contract'
 
 /**
- * Списки сайтов + журнал автообнаружения, в синхроне с main-процессом.
- * Тот же паттерн, что и `useZapret`/`useTheme`.
+ * Списки сайтов, в синхроне с main-процессом. Тот же паттерн, что и `useZapret`/`useTheme`.
  */
 export function useZapretLists(): {
   lists: ZapretList[]
-  autoHostlist: string[]
   save: (id: ZapretListId, entries: string[]) => Promise<ZapretList>
   reset: (id: ZapretListId) => Promise<ZapretList>
-  clearAuto: () => Promise<void>
   loading: boolean
 } {
   const [lists, setLists] = useState<ZapretList[]>([])
-  const [autoHostlist, setAutoHostlist] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    void Promise.all([window.api.getZapretLists(), window.api.getZapretAutoHostlist()]).then(
-      ([nextLists, nextAuto]) => {
-        setLists(nextLists)
-        setAutoHostlist(nextAuto)
-        setLoading(false)
-      }
-    )
+    void window.api.getZapretLists().then((nextLists) => {
+      setLists(nextLists)
+      setLoading(false)
+    })
   }, [])
 
   const save = useCallback(async (id: ZapretListId, entries: string[]) => {
@@ -39,10 +32,5 @@ export function useZapretLists(): {
     return updated
   }, [])
 
-  const clearAuto = useCallback(async () => {
-    await window.api.clearZapretAutoHostlist()
-    setAutoHostlist([])
-  }, [])
-
-  return { lists, autoHostlist, save, reset, clearAuto, loading }
+  return { lists, save, reset, loading }
 }

@@ -1,5 +1,5 @@
 /**
- * СГЕНЕРИРОВАНО `scripts/import-flowseal-strategies.mjs` из
+ * СГЕНЕРИРОВАНО `scripts/parser-strategies.mjs` из
  * Flowseal/zapret-discord-youtube 1.10.2 (commit dfd8e613b099676cf2aa7b474ee5923801514dec).
  * Не редактировать руками — перезапустить генератор и закоммитить результат.
  *

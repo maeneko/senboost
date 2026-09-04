@@ -57,8 +57,6 @@ const api = {
   getZapretStrategies: (): Promise<ZapretStrategy[]> => invoke('zapret:strategies'),
   startZapret: (strategyId: string): Promise<ZapretStatus> => invoke('zapret:start', strategyId),
   stopZapret: (): Promise<ZapretStatus> => invoke('zapret:stop'),
-  setZapretSystemProxy: (enabled: boolean): Promise<ZapretStatus> =>
-    invoke('zapret:set-system-proxy', enabled),
   setZapretStrategy: (strategyId: string): Promise<ZapretStatus> =>
     invoke('zapret:set-strategy', strategyId),
   setZapretAutoStart: (enabled: boolean): Promise<ZapretStatus> =>
@@ -72,8 +70,6 @@ const api = {
   saveZapretList: (id: ZapretListId, entries: string[]): Promise<ZapretList> =>
     invoke('zapret:list-save', id, entries),
   resetZapretList: (id: ZapretListId): Promise<ZapretList> => invoke('zapret:list-reset', id),
-  getZapretAutoHostlist: (): Promise<string[]> => invoke('zapret:auto-hostlist'),
-  clearZapretAutoHostlist: (): Promise<void> => invoke('zapret:auto-hostlist-clear'),
 
   /** Запускает проверку и отдаёт список сайтов; результаты — через `onZapretDiagnosticResult`. */
   runZapretDiagnostics: (): Promise<ZapretDiagnosticTarget[]> => invoke('zapret:diagnose'),

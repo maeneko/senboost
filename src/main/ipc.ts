@@ -2,15 +2,12 @@ import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } fro
 import type { IpcChannel, IpcHandlers, ThemeState } from '../shared/ipc-contract'
 import { uninstallApp } from './uninstall.win32'
 import {
-  clearZapretAutoHostlist,
   resetZapretList,
   saveZapretList,
   setZapretAutoStart,
   setZapretStrategy,
-  setZapretSystemProxy,
   startZapret,
   stopZapret,
-  zapretAutoHostlist,
   zapretDiagnostics,
   zapretLists,
   zapretStatus,
@@ -61,15 +58,12 @@ export function registerIpcHandlers(): void {
   handle('zapret:strategies', () => zapretStrategies())
   handle('zapret:start', (_event, strategyId) => startZapret(strategyId))
   handle('zapret:stop', () => stopZapret())
-  handle('zapret:set-system-proxy', (_event, enabled) => setZapretSystemProxy(enabled))
   handle('zapret:set-strategy', (_event, strategyId) => setZapretStrategy(strategyId))
   handle('zapret:set-autostart', (_event, enabled) => setZapretAutoStart(enabled))
 
   handle('zapret:lists', () => zapretLists())
   handle('zapret:list-save', (_event, id, entries) => saveZapretList(id, entries))
   handle('zapret:list-reset', (_event, id) => resetZapretList(id))
-  handle('zapret:auto-hostlist', () => zapretAutoHostlist())
-  handle('zapret:auto-hostlist-clear', () => clearZapretAutoHostlist())
   // Результаты уходят не ответом на invoke, а событиями по мере готовности — и именно
   // в то окно, которое просило проверку, а не всем подряд. Окно могло закрыться, пока
   // сайт отвечал (или молчал все 10 с таймаута), — тогда показывать результат уже некому.

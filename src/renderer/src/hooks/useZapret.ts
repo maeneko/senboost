@@ -14,7 +14,6 @@ export function useZapret(): {
   log: ZapretLogLine[]
   start: (strategyId: string) => Promise<void>
   stop: () => Promise<void>
-  setSystemProxy: (enabled: boolean) => Promise<void>
   setStrategy: (strategyId: string) => Promise<void>
   setAutoStart: (enabled: boolean) => Promise<void>
   busy: boolean
@@ -54,10 +53,6 @@ export function useZapret(): {
     }
   }, [])
 
-  const setSystemProxy = useCallback(async (enabled: boolean) => {
-    setStatus(await window.api.setZapretSystemProxy(enabled))
-  }, [])
-
   const setStrategy = useCallback(async (strategyId: string) => {
     setBusy(true)
     try {
@@ -76,5 +71,5 @@ export function useZapret(): {
     }
   }, [])
 
-  return { status, strategies, log, start, stop, setSystemProxy, setStrategy, setAutoStart, busy }
+  return { status, strategies, log, start, stop, setStrategy, setAutoStart, busy }
 }

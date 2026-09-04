@@ -3,13 +3,16 @@
  * Кладёт бинарники и данные zapret в resources/zapret/ — оттуда electron-builder
  * положит их в сборку через extraResources.
  *
- * Два источника:
- *   • bol-van/zapret   — движки (tpws, winws.exe + WinDivert), версия пинована и
+ * Три источника:
+ *   • bol-van/zapret   — движки (winws.exe + WinDivert, nfqws), версия пинована и
  *     сверяется по sha256sum.txt из релиза;
  *   • Flowseal/zapret-discord-youtube — подобранные сообществом списки доменов и
- *     стратегии winws (переносятся в код генератором `import-flowseal-strategies.mjs`,
+ *     стратегии winws (переносятся в код генератором `parser-strategies.mjs`,
  *     здесь просто данные: списки + fake-пакеты). У Flowseal нет sha256sum.txt —
  *     версия фиксируется по sha коммита, на который указывает тег.
+ *   • Flowseal/zapret-mac-discord-youtube — macOS-порт nfqws (`utunws`, работает через
+ *     utun+BPF вместо netfilter/WinDivert). Тоже без sha256sum.txt — сумму архива
+ *     релиза фиксируем сами (см. `FLOWSEAL_MAC_ZIP_SHA256`).
  *
  * Каталог resources/zapret в git не хранится: запустите `npm run zapret:fetch`
  * (или просто `npm run build` — он вызывает скрипт сам).
@@ -30,6 +33,16 @@ const WINDIVERT_VERSION = 'v2.2.2'
 const FLOWSEAL_VERSION = '1.10.2'
 const FLOWSEAL_COMMIT = 'dfd8e613b099676cf2aa7b474ee5923801514dec'
 
+/**
+ * Релиз Flowseal/zapret-mac-discord-youtube, откуда берём `utunws` — форк nfqws под
+ * macOS (utun+BPF вместо netfilter). У репозитория нет sha256sum.txt, поэтому вместо
+ * суммы отдельного бинарника фиксируем сумму всего архива релиза — она получена один раз
+ * командой `shasum -a 256` по скачанному `ZapretMac-macOS-universal.zip` и проверяется
+ * при каждой закачке, чтобы подмена ассета в чужом форке или на CDN не прошла незамеченной.
+ */
+const FLOWSEAL_MAC_VERSION = '1.1.2'
+const FLOWSEAL_MAC_ZIP_SHA256 = '9895b0ec5d13ec05676f755cde71107e72d2661538440c3cc4f06e0e6d47844f'
+
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const DEST = join(ROOT, 'resources', 'zapret')
 
@@ -40,7 +53,6 @@ const PREFIX = `zapret-${ZAPRET_VERSION}`
 
 /** Что забираем из архива bol-van/zapret: путь внутри архива → путь внутри resources/zapret. */
 const FILES = {
-  'binaries/mac64/tpws': 'darwin/tpws',
   'binaries/linux-x86_64/nfqws': 'linux/x64/nfqws',
   'binaries/windows-x86_64/winws.exe': 'win32/x64/winws.exe',
   'binaries/windows-x86_64/cygwin1.dll': 'win32/x64/cygwin1.dll',
@@ -50,7 +62,7 @@ const FILES = {
 }
 
 /** Исполняемый бит нужен только там, где мы сами запускаем бинарник. */
-const EXECUTABLE = new Set(['darwin/tpws', 'linux/x64/nfqws'])
+const EXECUTABLE = new Set(['darwin/utunws', 'linux/x64/nfqws'])
 
 /**
  * Списки доменов Flowseal → наши короткие имена (используются и в `lists.ts`, и
@@ -191,12 +203,51 @@ async function fetchFlowsealData(work) {
   console.log('  LICENSE.flowseal.txt')
 }
 
+/** Путь внутри ZapretMac-macOS-universal.zip до самого бинарника. */
+const UTUNWS_ZIP_ENTRY = 'ZapretMac.app/Contents/Resources/Payload/bin/utunws'
+
+async function fetchUtunwsEngine(work) {
+  console.log(`Flowseal-mac ${FLOWSEAL_MAC_VERSION}: скачиваю ZapretMac-macOS-universal.zip`)
+
+  const zipPath = join(work, 'zapretmac.zip')
+  const zipBuffer = await download(
+    `https://github.com/Flowseal/zapret-mac-discord-youtube/releases/download/${FLOWSEAL_MAC_VERSION}/ZapretMac-macOS-universal.zip`
+  )
+
+  const actual = sha256(zipBuffer)
+  if (actual !== FLOWSEAL_MAC_ZIP_SHA256) {
+    throw new Error(
+      `не совпала контрольная сумма ZapretMac-macOS-universal.zip\n` +
+        `  ожидалось: ${FLOWSEAL_MAC_ZIP_SHA256}\n  получено:  ${actual}`
+    )
+  }
+  await writeFile(zipPath, zipBuffer)
+
+  // unzip есть из коробки на macOS и в Git for Windows/WSL; в архиве Flowseal нет sha256sum.txt
+  // на отдельные файлы — сумму всего zip уже сверили выше, здесь просто достаём бинарник.
+  const utunwsDestination = join(DEST, 'darwin', 'utunws')
+  await mkdir(dirname(utunwsDestination), { recursive: true })
+  const extracted = execFileSync('unzip', ['-p', zipPath, UTUNWS_ZIP_ENTRY])
+  await writeFile(utunwsDestination, extracted)
+  await chmod(utunwsDestination, 0o755)
+  console.log(`  darwin/utunws (${extracted.length} байт, universal x86_64+arm64)`)
+
+  // LICENSE в архив релиза не входит (только ZapretMac.app) — берём из репозитория по тому
+  // же тегу, что и версия релиза, тем же приёмом, что LICENSE.WinDivert.txt выше.
+  const license = await download(
+    `https://raw.githubusercontent.com/Flowseal/zapret-mac-discord-youtube/${FLOWSEAL_MAC_VERSION}/LICENSE`
+  )
+  await writeFile(join(DEST, 'LICENSE.flowseal-mac.txt'), license)
+  console.log('  LICENSE.flowseal-mac.txt')
+}
+
 async function main() {
   const work = await mkdtemp(join(tmpdir(), 'zapret-'))
 
   try {
     await fetchZapretEngines(work)
     await fetchFlowsealData(work)
+    await fetchUtunwsEngine(work)
     console.log(`Готово: ${DEST}`)
   } finally {
     await rm(work, { recursive: true, force: true })
@@ -206,7 +257,7 @@ async function main() {
 // Повторная сборка не должна каждый раз ходить в сеть.
 if (
   process.argv.includes('--force') ||
-  !existsSync(join(DEST, 'darwin', 'tpws')) ||
+  !existsSync(join(DEST, 'darwin', 'utunws')) ||
   !existsSync(join(DEST, 'linux', 'x64', 'nfqws')) ||
   !existsSync(join(DEST, 'win32', 'x64', 'winws.exe')) ||
   !existsSync(join(DEST, 'lists', 'general.txt'))

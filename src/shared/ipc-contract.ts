@@ -23,14 +23,16 @@ export interface ThemeState {
 export type ZapretState = 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
 
 /**
- * Чем именно обходим на этой платформе:
- *   • `tpws-socks`     — macOS: локальный socks5-прокси, права не нужны;
+ * Чем именно обходим на этой платформе — на всех трёх один и тот же движок уровня пакетов
+ * (форки zapret/nfqws), запросы прав отличаются:
+ *   • `utunws-pf`      — macOS: LaunchDaemon (`utunws` через utun+BPF), пароль администратора
+ *                        на каждое включение/выключение (`osascript`);
  *   • `winws-service`  — Windows: служба с драйвером WinDivert;
  *   • `nfqws-nftables` — Linux: демон nfqws + правила nftables (NFQUEUE), root через pkexec
- *                        на каждое включение — ни службы, ни автозапуска здесь нет;
+ *                        на каждое включение;
  *   • `unsupported`    — платформа без поддержки (не macOS/Windows/Linux).
  */
-export type ZapretBackend = 'tpws-socks' | 'winws-service' | 'nfqws-nftables' | 'unsupported'
+export type ZapretBackend = 'utunws-pf' | 'winws-service' | 'nfqws-nftables' | 'unsupported'
 
 export interface ZapretStatus {
   state: ZapretState
@@ -41,13 +43,9 @@ export interface ZapretStatus {
   startedAt: string | null
   /** Текст последней ошибки — показываем пользователю как есть. */
   error: string | null
-  /** macOS: адрес socks5-прокси, пока обход работает. На Linux/Windows всегда null. */
-  socksAddress: string | null
-  /** macOS: прописан ли прокси в системных настройках сети. На Linux/Windows не используется. */
-  systemProxyApplied: boolean
   /** Windows: установлена ли служба (её ставит и настраивает само приложение при первом включении). */
   serviceInstalled: boolean
-  /** Windows: стоит ли служба на автозапуск с системой (`sc config start=`). На Linux автозапуска нет. */
+  /** macOS/Windows: автозапуск с системой без запущенного приложения. На Linux не используется. */
   autoStart: boolean
 }
 
@@ -118,23 +116,19 @@ export interface IpcHandlers {
   'zapret:strategies': () => ZapretStrategy[]
   'zapret:start': (strategyId: string) => ZapretStatus
   'zapret:stop': () => ZapretStatus
-  /** macOS: прописать/убрать socks-прокси в системных настройках сети. */
-  'zapret:set-system-proxy': (enabled: boolean) => ZapretStatus
   /**
    * Выбор пресета. Если обход выключен — просто запоминается. Если включён — на macOS
-   * перезапускает tpws, на Windows перенастраивает службу (потребуется UAC), на Linux
-   * перезапускает nfqws и правила nftables (потребуется пароль через pkexec).
+   * переустанавливает LaunchDaemon с utunws (потребуется пароль администратора), на Windows
+   * перенастраивает службу (потребуется UAC), на Linux перезапускает nfqws и правила
+   * nftables (потребуется пароль через pkexec).
    */
   'zapret:set-strategy': (strategyId: string) => ZapretStatus
-  /** Windows: автозапуск службы с системой (`sc config start=`); требует UAC. */
+  /** macOS/Windows: автозапуск с системой; требует пароль администратора/UAC. */
   'zapret:set-autostart': (enabled: boolean) => ZapretStatus
 
   'zapret:lists': () => ZapretList[]
   'zapret:list-save': (id: ZapretListId, entries: string[]) => ZapretList
   'zapret:list-reset': (id: ZapretListId) => ZapretList
-  /** Список, который zapret пополняет сам через --hostlist-auto (только macOS-профили). */
-  'zapret:auto-hostlist': () => string[]
-  'zapret:auto-hostlist-clear': () => void
 
   /**
    * Запустить проверку соединения и сразу вернуть список проверяемых сайтов — сами

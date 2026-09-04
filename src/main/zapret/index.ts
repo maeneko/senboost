@@ -1,4 +1,3 @@
-import { readFile, rm } from 'node:fs/promises'
 import type {
   ZapretDiagnosticResult,
   ZapretDiagnosticTarget,
@@ -15,7 +14,7 @@ import { ZapretEngine, UnsupportedEngine } from './engine'
 import { LinuxEngine } from './engine.linux'
 import { Win32Engine } from './engine.win32'
 import { readAllLists, resetList, seedLists, writeList } from './lists'
-import { autoHostlistPath } from './paths'
+import { restoreSystemProxy } from './proxy.darwin'
 import { listStrategies } from './strategies'
 
 function createEngine(): ZapretEngine {
@@ -35,16 +34,18 @@ const engine = createEngine()
 
 /**
  * Готовим списки сайтов, возвращаем выбор пользователя из прошлого запуска и синхронизируем
- * состояние с системой — на macOS чиним прокси от прошлого аварийного завершения, на Windows
- * подхватываем службу, которая могла работать ещё до открытия окна (автозапуск с системой),
- * на Linux — демон nfqws, переживший закрытие приложения (автозапуска у него нет, но сам
- * процесс и правила nftables продолжают работать). Все шаги нужно сделать до открытия окна.
+ * состояние с системой — на macOS подхватываем LaunchDaemon, который мог работать ещё до
+ * открытия окна (автозапуск с системой) и один раз чиним системный прокси, оставшийся от
+ * версий на tpws (≤0.5.4, см. `proxy.darwin.ts`), на Windows подхватываем службу с тем же
+ * автозапуском, на Linux — демон nfqws, переживший закрытие приложения (автозапуска у него
+ * нет, но сам процесс и правила nftables продолжают работать). Все шаги нужно сделать до
+ * открытия окна.
  */
 export async function recoverZapret(): Promise<void> {
   await seedLists()
 
-  // Сохранённый выбор применяем ДО sync(): на Windows у уже установленной службы реальное
-  // состояние (стратегия в strategy.cfg, StartMode) важнее записанного нами и перекроет его.
+  // Сохранённый выбор применяем ДО sync(): у уже установленной службы/демона реальное
+  // состояние (стратегия в strategy.cfg, автозапуск) важнее записанного нами и перекроет его.
   const settings = await loadSettings()
   engine.restorePreferences({
     // Стратегия могла исчезнуть в обновлении (подборка Flowseal меняется) или остаться от
@@ -54,7 +55,12 @@ export async function recoverZapret(): Promise<void> {
     autoStart: settings.autoStart
   })
 
-  if (engine instanceof DarwinEngine) await engine.recoverFromCrash()
+  if (engine instanceof DarwinEngine) {
+    await restoreSystemProxy().catch(() => {
+      // Раз откатить не удалось — оставляем как есть, не мешаем окну открыться.
+    })
+    await engine.sync()
+  }
   if (engine instanceof Win32Engine) await engine.sync()
   if (engine instanceof LinuxEngine) await engine.sync()
 }
@@ -85,10 +91,6 @@ export function stopZapret(): Promise<ZapretStatus> {
   return engine.stop()
 }
 
-export function setZapretSystemProxy(enabled: boolean): Promise<ZapretStatus> {
-  return engine.setSystemProxy(enabled)
-}
-
 export function setZapretStrategy(strategyId: string): Promise<ZapretStatus> {
   return engine.setStrategy(strategyId)
 }
@@ -114,23 +116,6 @@ export function resetZapretList(id: ZapretListId): Promise<ZapretList> {
   return resetList(id)
 }
 
-/** Домены, которые zapret нашёл сам через `--hostlist-auto` (только macOS-профили). */
-export async function zapretAutoHostlist(): Promise<string[]> {
-  try {
-    const content = await readFile(autoHostlistPath(), 'utf8')
-    return content
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
-export async function clearZapretAutoHostlist(): Promise<void> {
-  await rm(autoHostlistPath(), { force: true })
-}
-
 /**
  * Запускает проверку и сразу возвращает список сайтов — результаты приходят в `onResult`
  * по одному, по мере готовности (см. `runDiagnostics`). Промис проверки намеренно не ждём:
@@ -142,7 +127,7 @@ export function zapretDiagnostics(
 ): ZapretDiagnosticTarget[] {
   // Каждая проверка ловит свою ошибку сама, наружу выбраться нечему — ловим здесь только
   // чтобы неожиданное падение не осталось необработанным промисом.
-  runDiagnostics(engine.getStatus(), onResult).catch((error: unknown) => {
+  runDiagnostics(onResult).catch((error: unknown) => {
     console.error('[zapret] проверка соединения завершилась ошибкой:', error)
   })
   return DIAGNOSTIC_TARGETS
