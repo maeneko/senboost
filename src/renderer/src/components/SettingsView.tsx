@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { ZapretListId, ZapretStatus } from '@shared/ipc-contract'
 import { GITHUB_URL } from '@shared/links'
+import { useAppVersion } from '../hooks/useAppVersion'
 import { useZapretLists } from '../hooks/useZapretLists'
 import { LIST_TITLES } from '../lib/zapretListMeta'
 import ListEditor from './ListEditor'
@@ -12,9 +13,6 @@ import ListEditor from './ListEditor'
  */
 const isWindows = window.api.platform === 'win32'
 const APP_CHANNEL = 'beta'
-// Держать в синхроне с "version" в package.json — оттуда её берёт electron-builder
-// для имени установщика и для «Установленные приложения» в Windows.
-const APP_VERSION = '0.4.0'
 
 export default function SettingsView({
   onBack,
@@ -27,6 +25,7 @@ export default function SettingsView({
 }): React.JSX.Element {
   const { lists, autoHostlist, save, reset, clearAuto } = useZapretLists()
   const [openListId, setOpenListId] = useState<ZapretListId | null>(null)
+  const appVersion = useAppVersion()
 
   const openList = lists.find((list) => list.id === openListId)
   if (openList) {
@@ -119,9 +118,13 @@ export default function SettingsView({
         <p className="settings__support-hint">Поддержите звёздочкой</p>
       </section>
 
-      <p className="settings__version">
-        {APP_CHANNEL}-{APP_VERSION}-{window.api.platform}
-      </p>
+      {/* Пока версия не пришла из main, строки нет вовсе: иначе на первом кадре
+          мелькнуло бы «beta--win32» с пустотой на месте номера. */}
+      {appVersion && (
+        <p className="settings__version">
+          {APP_CHANNEL}-{appVersion}-{window.api.platform}
+        </p>
+      )}
 
       {isWindows && (
         <button

@@ -43,6 +43,9 @@ const api = {
    *  службы только на Windows (см. SettingsView.tsx). */
   platform: process.platform,
 
+  /** Версия запущенной сборки — из package.json через `app.getVersion()` в main. */
+  getAppVersion: (): Promise<string> => invoke('app:version'),
+
   getTheme: (): Promise<ThemeState> => invoke('theme:get'),
   onThemeChanged: (listener: (state: ThemeState) => void): (() => void) =>
     subscribe('theme:changed', listener),

@@ -49,7 +49,7 @@ jobs:
       # electron-builder.yml просто копирует resources/zapret, а он у чистого чекаута пуст.
       - run: node scripts/fetch-zapret.mjs
 
-      # electron-builder заливает .exe и .blockmap двумя параллельными publisher'ами: оба
+      # electron-builder заливает артефакты несколькими параллельными publisher'ами: оба
       # проверяют, есть ли релиз с этим тегом, оба видят «нет» и оба лезут его создавать —
       # второй падает с 422 already_exists и уносит с собой свой файл (на v0.5.0 так потерялся
       # сам .exe). Создаём релиз заранее, тогда обоим остаётся только залить в готовый.
@@ -71,6 +71,20 @@ jobs:
       # На push в main/PR публикации нет — только упаковка и загрузка в Artifacts ниже.
       - name: Build
         run: npx --no-install electron-vite build && npx --no-install electron-builder --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # differentialPackage: false и publishAutoUpdate: false в electron-builder.yml убирают
+      # .blockmap и latest.yml из ассетов (electron-updater в приложении нет — они были бы
+      # мёртвым грузом). В релизе должен остаться только .exe и контрольная сумма к нему.
+      - name: Контрольная сумма
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          exe="$(ls release/*.exe)"
+          md5sum "$exe" | awk '{ print $1 }' > "$exe.md5"
+          gh release upload "$GITHUB_REF_NAME" "$exe.md5" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

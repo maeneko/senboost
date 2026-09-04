@@ -52,7 +52,7 @@ export default function ZapretCard(): React.JSX.Element {
       )}
 
       <div className="settings__field">
-        <span className="settings__label">Стратегия</span>
+        <span className="settings__label">Способ</span>
         {/* На время переключения список заблокирован: смена стратегии на работающем
             обходе останавливает и перенастраивает службу, и второй выбор посреди этого
             наложился бы на первый. */}

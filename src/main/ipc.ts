@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron'
 import type { IpcChannel, IpcHandlers, ThemeState } from '../shared/ipc-contract'
 import { uninstallApp } from './uninstall.win32'
 import {
@@ -45,6 +45,10 @@ function themeState(): ThemeState {
 
 export function registerIpcHandlers(): void {
   handle('theme:get', () => themeState())
+
+  // Ровно то же значение, что electron-builder кладёт в имя установщика и в
+  // «Установленные приложения» — оба берут его из "version" в package.json.
+  handle('app:version', () => app.getVersion())
 
   // Кнопка «Удалить приложение» есть в интерфейсе только на Windows (SettingsView.tsx),
   // но канал регистрируем всегда — так и должно быть по контракту, просто на других

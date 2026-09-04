@@ -7,9 +7,14 @@ directories:
 # releaseType: release — публиковать релиз сразу, без черновика (draft — поведение по
 # умолчанию у electron-builder). С черновиком параллельная загрузка нескольких файлов иногда
 # создаёт два черновика с одним и тем же тегом вместо одного релиза.
+#
+# publishAutoUpdate: false — не заливать latest.yml. Это метаданные для electron-updater,
+# которого в приложении нет (обновляется пользователь вручную, скачивая новый инсталлятор
+# со страницы релиза) — файл был бы мёртвым грузом в ассетах.
 publish:
   provider: github
   releaseType: release
+  publishAutoUpdate: false
 
 files:
   - '!**/.vscode/*'
@@ -54,6 +59,10 @@ nsis:
   # в src/main/zapret/service.win32.ts) — сама установка приложения per-user безопасна.
   oneClick: true
   perMachine: false
+  # Без electron-updater (см. publishAutoUpdate выше) differential-обновления не нужны —
+  # differentialPackage: false отключает генерацию .blockmap, который иначе всегда
+  # заливался бы в ассеты релиза рядом с инсталлятором.
+  differentialPackage: false
   # Удалять %APPDATA%\rknboost (списки сайтов, метка первого запуска) вместе с приложением.
   # По умолчанию electron-builder этого НЕ делает, и данные оставались бы в системе после
   # удаления. Обновление приложения под это не попадает — в шаблоне деинсталлятора стоит

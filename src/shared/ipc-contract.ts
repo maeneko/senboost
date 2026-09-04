@@ -101,6 +101,14 @@ export interface ZapretDiagnosticResult extends ZapretDiagnosticTarget {
 export interface IpcHandlers {
   'theme:get': () => ThemeState
 
+  /**
+   * Версия приложения — `app.getVersion()`, то есть `"version"` из package.json той сборки,
+   * которая сейчас запущена. Раньше renderer держал её отдельной константой «в синхроне
+   * с package.json» вручную: константа осталась на 0.4.0 и релизы 0.5.0 и 0.5.1 показали
+   * пользователю чужую версию. Спрашивать у main — единственный способ не разъехаться.
+   */
+  'app:version': () => string
+
   /** Windows: подтверждает диалогом ОС, запускает деинсталлятор и закрывает приложение. */
   'app:uninstall': () => void
 
