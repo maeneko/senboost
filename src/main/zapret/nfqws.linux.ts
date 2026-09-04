@@ -78,18 +78,30 @@ export async function stageRuntime(): Promise<void> {
 }
 
 /**
- * `nfqws --dry-run @<файл>` — проверяет только аргументы фильтра, root не нужен (в отличие
- * от рабочего запуска демона). Запускаем бинарник из сборки напрямую: dry-run идёт от uid
+ * Номер очереди NFQUEUE — держать в синхроне с `QUEUE_NUM` в `rknboost-helper.sh`
+ * (там же и объяснение выбора числа). В TS он нужен только для `--dry-run` ниже: сам
+ * помощник получает его не отсюда, а как захардкоженное значение в своём коде.
+ */
+const NFQUEUE_NUM = 220
+
+/**
+ * `nfqws --dry-run @<файл>` — проверяет аргументы фильтра, root не нужен (в отличие от
+ * рабочего запуска демона). Запускаем бинарник из сборки напрямую: dry-run идёт от uid
  * самого приложения, а не root, так что FUSE-примонтированный AppImage тут не помеха —
- * ограничение касается только `pkexec` (см. linuxStagingDir()). Дословный аналог
- * `Win32Engine['dryRun']`.
+ * ограничение касается только `pkexec` (см. linuxStagingDir()).
+ *
+ * В отличие от `Win32Engine['dryRun']` (там `winws.exe --dry-run @file` без доп. флагов
+ * достаточно) nfqws требует `--qnum` даже для проверки — «Need queue number (--qnum)»,
+ * даже когда реальная очередь не открывается. Значение то же, что использует помощник
+ * при настоящем запуске: раз номер не совпадёт — `nft`-правила и демон всё равно будут
+ * рассинхронизированы, но сам факт валидности остальных аргументов dry-run проверяет верно.
  */
 export async function dryRun(configBody: string): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'rknboost-dryrun-'))
   const configPath = join(dir, 'dry-run.cfg')
   try {
     await writeFile(configPath, configBody, 'utf8')
-    await run(nfqwsPath(), ['--dry-run', `@${configPath}`])
+    await run(nfqwsPath(), ['--dry-run', `--qnum=${NFQUEUE_NUM}`, `@${configPath}`])
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Стратегия содержит недопустимые параметры nfqws: ${message}`, {

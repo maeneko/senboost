@@ -23,6 +23,7 @@ CONFIG="$RUN_DIR/strategy.cfg"
 ERRLOG="$RUN_DIR/nfqws.err"
 TABLE_FAMILY=inet
 TABLE_NAME=rknboost
+# Держать в синхроне с NFQUEUE_NUM в nfqws.linux.ts (используется там же для --dry-run).
 QUEUE_NUM=220
 FW_MARK=0x40000000
 
