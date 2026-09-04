@@ -129,6 +129,11 @@ mac:
       to: darwin-helper
 dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
+  # Тот же мотив, что differentialPackage: false у nsis — electron-updater'а в приложении
+  # нет, и .blockmap рядом с .dmg был бы мёртвым грузом в ассетах релиза. У mac-таргета zip
+  # такого выключателя нет (isWriteUpdateInfo зашит в macPackager), поэтому
+  # `*-mac.zip.blockmap` всё равно соберётся — см. комментарий в джобе «Сборка (macOS)».
+  writeUpdateInfo: false
 
 linux:
   executableName: senboost

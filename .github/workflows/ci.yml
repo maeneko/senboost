@@ -195,3 +195,89 @@ jobs:
             release/*.deb
           if-no-files-found: error
           retention-days: 7
+
+  build-mac:
+    name: Сборка (macOS)
+    needs: check
+    # macos-latest — arm64-раннер, но electron-builder собирает обе цели из
+    # electron-builder.yml (dmg + zip, x64 и arm64): нужные бинарники Electron он качает
+    # сам, а utunws в resources/zapret/darwin и так universal (x86_64 + arm64).
+    runs-on: macos-latest
+    # На тег vX.Y.Z нужен contents: write — electron-builder публикует релиз через GH_TOKEN.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Без этого шага сборка уезжает без utunws: extraResources в electron-builder.yml
+      # просто копирует resources/zapret, а он у чистого чекаута пуст.
+      - run: node scripts/fetch-zapret.mjs
+
+      # Та же гонка «кто первый создаст релиз», что и в джобах Windows/Linux выше — эта
+      # джоба конкурирует с ними наравне (все стартуют параллельно после check), отсюда и
+      # тот же `|| true`. Комментарий с полным объяснением — в джобе Windows.
+      - name: Заготовка релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --notes '' || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Подпись и нотаризация не настроены (notarize: false в electron-builder.yml, секретов
+      # CSC_LINK/CSC_KEY_PASSWORD нет) — .dmg и .zip уезжают неподписанными, и Gatekeeper
+      # будет ругаться на них у пользователя. Как включить — раздел «Подпись» в README.md.
+      # На push в main/PR публикации нет — только упаковка и Artifacts ниже.
+      - name: Build
+        run: npx --no-install electron-vite build && npx --no-install electron-builder --mac --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Тот же мотив, что у Windows/Linux-джоб: в релизе должны остаться только сами
+      # артефакты и контрольная сумма к каждому. `md5 -q`, а не `md5sum` из тех джоб: md5sum
+      # на macOS появился лишь в свежих версиях (в 26 это хардлинк на тот же бинарник, что и
+      # md5), а на 14/15 его нет вовсе — `md5 -q` есть везде и печатает голый хеш, ровно как
+      # `md5sum | awk '{print $1}'` у соседних джоб.
+      #
+      # Заодно убираем из релиза `*-mac.zip.blockmap`: для dmg блокмап выключен
+      # (writeUpdateInfo: false в electron-builder.yml), а для mac-zip выключателя нет —
+      # electron-builder публикует его вместе с архивом, хотя electron-updater'а в
+      # приложении нет и differential-обновления никому не нужны.
+      - name: Контрольная сумма
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for blockmap in release/*.blockmap; do
+            gh release delete-asset "$GITHUB_REF_NAME" "$(basename "$blockmap")" --yes 2>/dev/null || true
+          done
+          files=(release/*.dmg release/*.zip)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "не нашлось ни .dmg, ни .zip в release/" >&2
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            md5 -q "$file" > "$file.md5"
+            gh release upload "$GITHUB_REF_NAME" "$file.md5" --clobber
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Шага «Описание релиза» здесь намеренно нет — он живёт только в джобе Windows,
+      # иначе джобы перезаписывали бы описание релиза друг другу.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: senboost-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+          retention-days: 7
