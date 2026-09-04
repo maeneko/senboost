@@ -5,7 +5,7 @@ import { app } from 'electron'
 
 /**
  * Выбор пользователя между запусками: `settings.json` в userData (на Windows —
- * `%AppData%\RKNboost`), поэтому переживает обновление и переустановку.
+ * `%AppData%\SenBoost`), поэтому переживает обновление и переустановку.
  *
  * Списки сайтов сюда не входят: они лежат рядом, в `userData/zapret-lists/*.txt`, и
  * читаются прямо оттуда самими tpws и winws (см. `zapret/lists.ts`).

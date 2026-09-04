@@ -6,7 +6,7 @@ import { registerIpcHandlers } from './ipc'
 import { disposeZapret, recoverZapret } from './zapret'
 import { elevatedTaskDir, runElevatedServiceTask } from './zapret/elevated-task.win32'
 
-const APP_ID = 'com.rknboost.app'
+const APP_ID = 'com.senboost.app'
 
 // Приложение может быть запущено само собой через UAC как «повышенный помощник» — тогда
 // оно не открывает окно и не занимает единственный экземпляр (иначе отдало бы фокус уже

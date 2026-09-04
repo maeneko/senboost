@@ -78,7 +78,7 @@ export async function stageRuntime(): Promise<void> {
 }
 
 /**
- * Номер очереди NFQUEUE — держать в синхроне с `QUEUE_NUM` в `rknboost-helper.sh`
+ * Номер очереди NFQUEUE — держать в синхроне с `QUEUE_NUM` в `senboost-helper.sh`
  * (там же и объяснение выбора числа). В TS он нужен только для `--dry-run` ниже: сам
  * помощник получает его не отсюда, а как захардкоженное значение в своём коде.
  */
@@ -97,7 +97,7 @@ const NFQUEUE_NUM = 220
  * рассинхронизированы, но сам факт валидности остальных аргументов dry-run проверяет верно.
  */
 export async function dryRun(configBody: string): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'rknboost-dryrun-'))
+  const dir = await mkdtemp(join(tmpdir(), 'senboost-dryrun-'))
   const configPath = join(dir, 'dry-run.cfg')
   try {
     await writeFile(configPath, configBody, 'utf8')
@@ -198,8 +198,8 @@ export async function isProcessAlive(pid: number): Promise<boolean> {
 }
 
 /**
- * Не требует root: `nfqws.pid` и `strategy.cfg` в `/run/rknboost` помощник кладёт с правами
- * 0644 (см. rknboost-helper.sh) именно затем, чтобы это чтение — и восстановление состояния
+ * Не требует root: `nfqws.pid` и `strategy.cfg` в `/run/senboost` помощник кладёт с правами
+ * 0644 (см. senboost-helper.sh) именно затем, чтобы это чтение — и восстановление состояния
  * в `LinuxEngine.sync()` — обходилось без пароля.
  */
 export async function readNfqwsState(): Promise<NfqwsState> {

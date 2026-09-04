@@ -6,8 +6,8 @@
 # watchdog.sh форка Flowseal/zapret-mac-discord-youtube (MIT) без изменений логики.
 SUPERVISOR_PID=$1
 ENGINE_PID=$2
-ANCHOR=com.apple/rknboost
-TOKEN_FILE=/var/run/rknboost-zapret.pf-token
+ANCHOR=com.apple/senboost
+TOKEN_FILE=/var/run/senboost-zapret.pf-token
 
 while kill -0 "$SUPERVISOR_PID" 2>/dev/null && kill -0 "$ENGINE_PID" 2>/dev/null; do
     sleep 0.2

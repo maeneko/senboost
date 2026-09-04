@@ -3,4 +3,4 @@
  * в настройках (`SettingsView.tsx`), и приветственное окно при первом запуске
  * (`src/main/first-run.ts`).
  */
-export const GITHUB_URL = 'https://github.com/maeneko/rknboost'
+export const GITHUB_URL = 'https://github.com/maeneko/senboost'

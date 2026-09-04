@@ -1,5 +1,5 @@
 #!/bin/sh
-# Привилегированная установка обхода блокировок на macOS — единственное, что RKNboost
+# Привилегированная установка обхода блокировок на macOS — единственное, что SenBoost
 # запускает через osascript "with administrator privileges" (см. elevate.darwin.ts) для
 # включения обхода. Не редактировать под bash-специфику: этот файл исполняется как
 # /bin/sh — на macOS это тот же путь, что и на Linux, но лучше не полагаться на bashisms.
@@ -9,10 +9,10 @@
 #
 # Аргументы (все уже подготовлены и провалидированы на стороне приложения — сюда попадают
 # только готовые пути и провалидированные строки портов, тот же принцип, что у Linux-
-# помощника resources/linux-helper/rknboost-helper.sh):
+# помощника resources/linux-helper/senboost-helper.sh):
 #   1: utunws_src   — путь к бинарнику utunws в resources/zapret/darwin (ещё не установлен)
 #   2: fakes_src    — каталог с fake-пакетами (resources/zapret/fakes)
-#   3: config_src   — уже отрендеренный strategy.cfg (маркер --comment=rknboost:<id>:<hash>
+#   3: config_src   — уже отрендеренный strategy.cfg (маркер --comment=senboost:<id>:<hash>
 #                      первой строкой, пути {LISTS}/{FAKES} уже резолвлены — см. strategies.ts)
 #   4: tcp_ports    — список портов TCP для pf, формат "80,443,8443" (уже проверен регуляркой
 #                      в packetEngineConfig())
@@ -22,13 +22,13 @@
 set -eu
 
 HELPER_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-DEST='/Library/Application Support/RKNboost/zapret'
-LABEL=com.rknboost.zapret
+DEST='/Library/Application Support/SenBoost/zapret'
+LABEL=com.senboost.zapret
 PLIST=/Library/LaunchDaemons/$LABEL.plist
-ANCHOR=com.apple/rknboost
-PIDFILE=/var/run/rknboost-zapret.pid
-TOKEN_FILE=/var/run/rknboost-zapret.pf-token
-KEEPINIT_FILE=/var/db/rknboost-zapret.keepinit
+ANCHOR=com.apple/senboost
+PIDFILE=/var/run/senboost-zapret.pid
+TOKEN_FILE=/var/run/senboost-zapret.pf-token
+KEEPINIT_FILE=/var/db/senboost-zapret.keepinit
 
 if [ "$#" -ne 6 ]; then
     echo 'install.sh: ожидается 6 аргументов' >&2
@@ -45,7 +45,7 @@ RUN_AT_LOAD=$6
 [ -d "$FAKES_SRC" ] || { echo 'install.sh: не найден каталог fake-пакетов' >&2; exit 1; }
 [ -f "$CONFIG_SRC" ] || { echo 'install.sh: не найден strategy.cfg' >&2; exit 1; }
 # Формат уже проверен регуляркой в packetEngineConfig()/utunwsConfig() — здесь просто не
-# доверяем слепо тому, что дошло до root, тот же приём, что в rknboost-helper.sh на Linux.
+# доверяем слепо тому, что дошло до root, тот же приём, что в senboost-helper.sh на Linux.
 # ':' — не опечатка: utunwsConfig() переводит диапазоны в синтаксис pf (19294-19344 →
 # 19294:19344, см. toPfPortRanges() в strategies.ts), дефисов в этих строках уже нет.
 case ",$TCP_PORTS," in *[!0-9,:]*) echo 'install.sh: странный формат tcp-портов' >&2; exit 1 ;; esac
@@ -57,7 +57,7 @@ case "$RUN_AT_LOAD" in
 esac
 
 # Сносим прошлую установку — самолечение на случай аварийно прерванной прошлой сессии,
-# тот же приём, что cmd_stop() в rknboost-helper.sh на Linux делает первым шагом start.
+# тот же приём, что cmd_stop() в senboost-helper.sh на Linux делает первым шагом start.
 /bin/launchctl bootout system/"$LABEL" >/dev/null 2>&1 || true
 /sbin/pfctl -a "$ANCHOR" -F all >/dev/null 2>&1 || true
 # Матчим процесс по полному пути НАШЕЙ установки, а не по имени: "utunws" называется так
@@ -96,7 +96,7 @@ printf '%s\n%s\n' "$TCP_PORTS" "$UDP_PORTS" > "$DEST/ports.conf"
     -e "s|@LABEL@|$LABEL|g" \
     -e "s|@DEST@|$DEST|g" \
     -e "s|@RUNATLOAD@|$RUNATLOAD|g" \
-    "$HELPER_DIR/com.rknboost.zapret.plist.in" > "$PLIST"
+    "$HELPER_DIR/com.senboost.zapret.plist.in" > "$PLIST"
 /usr/sbin/chown root:wheel "$PLIST"
 /bin/chmod 644 "$PLIST"
 

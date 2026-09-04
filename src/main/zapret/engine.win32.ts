@@ -30,7 +30,7 @@ import {
 
 const run = promisify(execFile)
 
-/** Первая строка `strategy.cfg` — из `winwsConfigFile()`, формат: `--comment=rknboost:<id>:<hash>`. */
+/** Первая строка `strategy.cfg` — из `winwsConfigFile()`, формат: `--comment=senboost:<id>:<hash>`. */
 async function readInstalledMarkerLine(): Promise<string | null> {
   try {
     const content = await readFile(serviceConfigPath(), 'utf8')
@@ -85,7 +85,7 @@ async function needsReconfigure(config: EngineConfig, info: ServiceInfo | null):
 
 /**
  * Windows: winws требует драйвер WinDivert и права администратора, поэтому работает как служба
- * Windows (`rknboost-zapret`), а не как обычный дочерний процесс приложения.
+ * Windows (`senboost-zapret`), а не как обычный дочерний процесс приложения.
  *
  * UAC запрашивается только при первой установке службы и при смене аргументов (новая стратегия,
  * переключение автозапуска) — этим занимается `service.win32.ts`. Обычные включение/выключение
@@ -207,7 +207,7 @@ export class Win32Engine extends ZapretEngine {
    * а не после него.
    */
   private async dryRun(configBody: string): Promise<void> {
-    const dir = await mkdtemp(join(tmpdir(), 'rknboost-dryrun-'))
+    const dir = await mkdtemp(join(tmpdir(), 'senboost-dryrun-'))
     const configPath = join(dir, 'dry-run.cfg')
     try {
       await writeFile(configPath, configBody, 'utf8')

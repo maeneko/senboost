@@ -1,5 +1,5 @@
-appId: com.rknboost.app
-productName: RKNboost
+appId: com.senboost.app
+productName: SenBoost
 directories:
   buildResources: build
   output: release
@@ -52,10 +52,10 @@ extraResources:
       - 'LICENSE.flowseal.txt'
 
 win:
-  executableName: RKNboost
+  executableName: SenBoost
   # Приложение запрашивает права администратора при КАЖДОМ запуске (манифест exe).
   # Внимание на компромисс: установка при этом остаётся per-user, то есть exe лежит в
-  # %LocalAppData%\Programs\RKNboost — папке, доступной на запись обычному пользователю.
+  # %LocalAppData%\Programs\SenBoost — папке, доступной на запись обычному пользователю.
   # Значит подмена этого exe даёт злоумышленнику администратора с подтверждения самого
   # пользователя. Это осознанный выбор владельца проекта; безопасный вариант — вернуть
   # perMachine: true, чтобы exe лежал в защищённом от записи Program Files.
@@ -86,7 +86,7 @@ nsis:
   # differentialPackage: false отключает генерацию .blockmap, который иначе всегда
   # заливался бы в ассеты релиза рядом с инсталлятором.
   differentialPackage: false
-  # Удалять %APPDATA%\rknboost (списки сайтов, метка первого запуска) вместе с приложением.
+  # Удалять %APPDATA%\senboost (списки сайтов, метка первого запуска) вместе с приложением.
   # По умолчанию electron-builder этого НЕ делает, и данные оставались бы в системе после
   # удаления. Обновление приложения под это не попадает — в шаблоне деинсталлятора стоит
   # проверка `ifNot isUpdated`, так что отредактированные списки переживают обновление.
@@ -131,7 +131,7 @@ dmg:
   artifactName: ${name}-${version}-${arch}.${ext}
 
 linux:
-  executableName: rknboost
+  executableName: senboost
   # desktopName в package.json + syncDesktopName — иначе Electron не свяжет открытые окна
   # с .desktop-записью (app_id/WM_CLASS), и часть окружений не покажет иконку в панели задач.
   syncDesktopName: true
@@ -140,13 +140,13 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
-  maintainer: RKNboost
+  maintainer: SenBoost
   category: Network
   synopsis: Обход блокировок через zapret
   extraResources:
     - from: resources/zapret/linux
       to: zapret/linux
-    # rknboost-helper.sh — привилегированный помощник (nfqws.linux.ts зовёт его через
+    # senboost-helper.sh — привилегированный помощник (nfqws.linux.ts зовёт его через
     # pkexec). Не из resources/zapret: тот качает fetch-zapret.mjs, а этот файл — свой,
     # лежит в репозитории (см. src/main/zapret/paths.ts:bundledHelperPath()).
     - from: resources/linux-helper

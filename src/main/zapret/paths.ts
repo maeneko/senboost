@@ -34,8 +34,8 @@ export function nfqwsPath(): string {
  */
 export function bundledHelperPath(): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'linux-helper', 'rknboost-helper.sh')
-    : resolve(app.getAppPath(), 'resources', 'linux-helper', 'rknboost-helper.sh')
+    ? join(process.resourcesPath, 'linux-helper', 'senboost-helper.sh')
+    : resolve(app.getAppPath(), 'resources', 'linux-helper', 'senboost-helper.sh')
 }
 
 /**
@@ -57,7 +57,7 @@ export function stagedNfqwsPath(): string {
 }
 
 export function stagedHelperPath(): string {
-  return join(linuxStagingDir(), 'rknboost-helper.sh')
+  return join(linuxStagingDir(), 'senboost-helper.sh')
 }
 
 /** Стейджинговая копия `fakesDir()` — то, что реально читает nfqws (см. её комментарий). */
@@ -73,11 +73,11 @@ export function bundledFakesDir(): string {
 /**
  * Рабочий каталог демона — pidfile и `strategy.cfg` (последний — источник маркера стратегии
  * для `LinuxEngine.sync()`, читается без root: помощник кладёт его с правами 0644). Создаёт
- * и чистит сам `rknboost-helper.sh`. `/run` — стандартный FHS-путь для данных, не переживающих
+ * и чистит сам `senboost-helper.sh`. `/run` — стандартный FHS-путь для данных, не переживающих
  * перезагрузку: nfqws её тоже не переживает, автозапуска на Linux нет (см. README.md).
  */
 export function linuxRuntimeDir(): string {
-  return '/run/rknboost'
+  return '/run/senboost'
 }
 
 export function linuxPidfilePath(): string {
@@ -118,7 +118,7 @@ export function darwinAutostartScriptPath(): string {
  * обычному пользователю (то же рассуждение, что у `protectedWinwsPath()` на Windows).
  */
 export function darwinInstallDir(): string {
-  return '/Library/Application Support/RKNboost/zapret'
+  return '/Library/Application Support/SenBoost/zapret'
 }
 
 /** Стейджинговая копия `fakesDir()` — то же назначение, что `stagedFakesDir()` на Linux. */
@@ -138,15 +138,15 @@ export function darwinPortsPath(): string {
 
 /**
  * `utunws --pidfile=...` пишет сюда свой pid до начала работы (см. `daemon.sh`) — читается
- * без root, тот же принцип, что у `linuxPidfilePath()`. `/var/run` — не `/run/rknboost`
+ * без root, тот же принцип, что у `linuxPidfilePath()`. `/var/run` — не `/run/senboost`
  * (Linux-путь): на macOS это симлинк на `/private/var/run`, а не отдельная точка монтирования.
  */
 export function darwinPidfilePath(): string {
-  return '/var/run/rknboost-zapret.pid'
+  return '/var/run/senboost-zapret.pid'
 }
 
 export function darwinPlistPath(): string {
-  return '/Library/LaunchDaemons/com.rknboost.zapret.plist'
+  return '/Library/LaunchDaemons/com.senboost.zapret.plist'
 }
 
 /** Встроенные списки (из Flowseal/zapret-discord-youtube, см. scripts/fetch-zapret.mjs) — только для чтения. */
@@ -177,12 +177,12 @@ export function fakesDir(): string {
 }
 
 /**
- * Windows: служба `rknboost-zapret` работает от LocalSystem, поэтому её конфиг не может
+ * Windows: служба `senboost-zapret` работает от LocalSystem, поэтому её конфиг не может
  * жить в userData обычного пользователя — нужен каталог машинного уровня. `%ProgramData%`
  * почти всегда задан; `C:\ProgramData` — тот же путь, на который он указывает по умолчанию.
  */
 export function serviceDataDir(): string {
-  return join(process.env.ProgramData ?? 'C:\\ProgramData', 'rknboost', 'zapret')
+  return join(process.env.ProgramData ?? 'C:\\ProgramData', 'senboost', 'zapret')
 }
 
 /** Файл аргументов `winws.exe @strategy.cfg` — пишется только повышенным скриптом службы. */

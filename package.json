@@ -1,14 +1,14 @@
 {
-  "name": "rknboost",
+  "name": "senboost",
   "version": "0.6.0",
   "description": "Кроссплатформенное десктопное приложение на Electron + React + TypeScript",
   "main": "./out/main/index.js",
-  "desktopName": "rknboost.desktop",
-  "author": "RKNboost",
+  "desktopName": "senboost.desktop",
+  "author": "SenBoost",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/maeneko/rknboost"
+    "url": "https://github.com/maeneko/senboost"
   },
   "private": true,
   "engines": {

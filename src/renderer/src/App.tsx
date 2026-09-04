@@ -20,7 +20,7 @@ export default function App(): React.JSX.Element {
       ) : (
         <>
           <div className="app-header">
-            <span className="app-header__name">RKNboost</span>
+            <span className="app-header__name">SenBoost</span>
             <button
               type="button"
               className="app-header__settings"

@@ -35,7 +35,7 @@ interface UninstallCommand {
  * строкой `'"$2" $0'`, где `$2` — путь к деинсталлятору, а `$0` — `/currentuser` для
  * per-user установки (или `/allusers`). То есть путь в кавычках И аргумент после него:
  *
- *     "C:\Users\...\AppData\Local\Programs\RKNboost\Uninstall RKNboost.exe" /currentuser
+ *     "C:\Users\...\AppData\Local\Programs\SenBoost\Uninstall SenBoost.exe" /currentuser
  *
  * Аргумент обязателен: без него деинсталлятор не знает, из какой ветки реестра сниматься.
  * Разбираем строку на команду и аргументы, а не пытаемся скормить её `spawn` целиком —
@@ -66,7 +66,7 @@ async function findUninstallCommand(): Promise<UninstallCommand | null> {
   const script =
     "Get-ChildItem 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' " +
     '| Get-ItemProperty ' +
-    "| Where-Object { $_.DisplayName -eq 'RKNboost' } " +
+    "| Where-Object { $_.DisplayName -eq 'SenBoost' } " +
     '| Select-Object -First 1 -ExpandProperty UninstallString'
 
   let stdout: string
@@ -110,8 +110,8 @@ export async function uninstallApp(window: BrowserWindow | null): Promise<void> 
     defaultId: 0,
     cancelId: 0,
     noLink: true,
-    title: 'Удалить RKNboost',
-    message: 'Удалить RKNboost с этого компьютера?',
+    title: 'Удалить SenBoost',
+    message: 'Удалить SenBoost с этого компьютера?',
     detail:
       'Приложение закроется и запустится стандартный деинсталлятор Windows. ' +
       'Вместе с ним будут удалены списки сайтов и служба обхода блокировок. ' +

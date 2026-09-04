@@ -44,7 +44,7 @@ export async function showFirstRunSupportDialog(window: BrowserWindow): Promise<
     defaultId: 0,
     cancelId: 1,
     noLink: true,
-    title: 'Поддержите RKNboost',
+    title: 'Поддержите SenBoost',
     message: 'Поддержите проект',
     detail: 'Поддержите проект звездочкой на GitHub, и расскажите друзьям :З'
   })

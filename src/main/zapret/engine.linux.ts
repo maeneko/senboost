@@ -12,7 +12,7 @@ const WATCH_INTERVAL_MS = 3000
  * NFQUEUE. Ни служба, ни автозапуск не заведены (см. README.md) — каждое включение просит
  * пароль через `pkexec` (см. `nfqws.linux.ts`), а сам демон и его правила переживают выход
  * из приложения: `bypass` на очереди означает, что их отсутствие не рвёт пользователю сеть
- * (см. `rknboost-helper.sh`), поэтому `dispose()` намеренно пуст — как и на Windows.
+ * (см. `senboost-helper.sh`), поэтому `dispose()` намеренно пуст — как и на Windows.
  */
 export class LinuxEngine extends ZapretEngine {
   private watchTimer: ReturnType<typeof setInterval> | null = null

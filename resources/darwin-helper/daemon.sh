@@ -1,5 +1,5 @@
 #!/bin/sh
-# Супервизор обхода — то, что реально запускает launchd (com.rknboost.zapret.plist.in,
+# Супервизор обхода — то, что реально запускает launchd (com.senboost.zapret.plist.in,
 # ProgramArguments). Живёт под root, пока LaunchDaemon загружен; KeepAlive/SuccessfulExit
 # в plist перезапускает этот скрипт заново при любом его завершении — поэтому определение
 # интерфейса/MAC шлюза выполняется здесь при каждом старте (в том числе после смены сети),
@@ -7,15 +7,15 @@
 # (MIT) — та же логика с utunws через utun+BPF, свои идентификаторы (см. install.sh).
 set -eu
 
-DEST='/Library/Application Support/RKNboost/zapret'
-ANCHOR=com.apple/rknboost
+DEST='/Library/Application Support/SenBoost/zapret'
+ANCHOR=com.apple/senboost
 UTUN_UNIT=61
 UTUN_IFACE=utun60
 UTUN_LOCAL=10.78.0.1
 UTUN_REMOTE=10.78.0.2
-PIDFILE=/var/run/rknboost-zapret.pid
-TOKEN_FILE=/var/run/rknboost-zapret.pf-token
-ROUTE6_FILE=/var/run/rknboost-zapret.route6
+PIDFILE=/var/run/senboost-zapret.pid
+TOKEN_FILE=/var/run/senboost-zapret.pf-token
+ROUTE6_FILE=/var/run/senboost-zapret.route6
 ENGINE_PID=
 WATCHDOG_PID=
 

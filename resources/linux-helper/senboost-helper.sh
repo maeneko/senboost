@@ -1,5 +1,5 @@
 #!/bin/sh
-# Привилегированный помощник обхода блокировок на Linux — единственное, что RKNboost
+# Привилегированный помощник обхода блокировок на Linux — единственное, что SenBoost
 # запускает через `pkexec`. Не редактировать под bash-специфику: /bin/sh на Debian/Ubuntu —
 # это dash, а не bash.
 #
@@ -17,18 +17,18 @@
 # команда не найдена) при разборе результата на стороне приложения.
 set -eu
 
-RUN_DIR=/run/rknboost
+RUN_DIR=/run/senboost
 PIDFILE="$RUN_DIR/nfqws.pid"
 CONFIG="$RUN_DIR/strategy.cfg"
 ERRLOG="$RUN_DIR/nfqws.err"
 TABLE_FAMILY=inet
-TABLE_NAME=rknboost
+TABLE_NAME=senboost
 # Держать в синхроне с NFQUEUE_NUM в nfqws.linux.ts (используется там же для --dry-run).
 QUEUE_NUM=220
 FW_MARK=0x40000000
 
 log() {
-  echo "rknboost-helper: $*" >&2
+  echo "senboost-helper: $*" >&2
 }
 
 # pkexec запускает с урезанным PATH (санирует окружение) — sbin, где обычно лежит nft,
@@ -107,7 +107,7 @@ cmd_start() {
   chmod 0755 "$RUN_DIR"
 
   # strategy.cfg в /run — источник маркера стратегии для LinuxEngine.sync(): читается без
-  # root (0644), первая строка — тот же --comment=rknboost:<id>:<hash>, что и на Windows.
+  # root (0644), первая строка — тот же --comment=senboost:<id>:<hash>, что и на Windows.
   cp "$config_src" "$CONFIG"
   chmod 0644 "$CONFIG"
 

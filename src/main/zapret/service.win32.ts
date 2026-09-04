@@ -14,7 +14,7 @@ import { SERVICE_BINARY_NAMES, serviceConfigPath, serviceDataDir, winwsPath } fr
 
 const run = promisify(execFile)
 
-export const SERVICE_NAME = 'rknboost-zapret'
+export const SERVICE_NAME = 'senboost-zapret'
 
 const POLL_INTERVAL_MS = 300
 const POLL_TIMEOUT_MS = 10000
@@ -377,11 +377,11 @@ try {
         $result = Invoke-ScRaw $scArgs
         if ($result.ExitCode -ne 0) { throw "sc config завершился с кодом $($result.ExitCode) : $($result.Output)" }
       } else {
-        $scArgs = 'create ' + $ServiceName + ' binPath= ' + $binPath + ' start= ' + $startType + ' DisplayName= "RKNboost: обход блокировок"'
+        $scArgs = 'create ' + $ServiceName + ' binPath= ' + $binPath + ' start= ' + $startType + ' DisplayName= "SenBoost: обход блокировок"'
         $result = Invoke-ScRaw $scArgs
         if ($result.ExitCode -ne 0) { throw "sc create завершился с кодом $($result.ExitCode) : $($result.Output)" }
       }
-      & sc.exe description $ServiceName 'Служба RKNboost: обходит блокировки через winws/WinDivert.' | Out-Null
+      & sc.exe description $ServiceName 'Служба SenBoost: обходит блокировки через winws/WinDivert.' | Out-Null
 
       # Разрешаем интерактивным пользователям запуск/остановку/чтение статуса службы, но не
       # смену конфигурации и не смену прав — иначе любой пользователь на машине мог бы подменить
@@ -451,7 +451,7 @@ async function readResult(path: string): Promise<{ ok: boolean; error: string | 
  * Результат в обоих случаях читаем из `result.json`, а не из кода возврата процесса.
  */
 async function runElevated(payload: Record<string, unknown>): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'rknboost-svc-'))
+  const dir = await mkdtemp(join(tmpdir(), 'senboost-svc-'))
   const workerPath = join(dir, TASK_FILES.worker)
   const outerPath = join(dir, 'outer.ps1')
   const payloadPath = join(dir, TASK_FILES.payload)

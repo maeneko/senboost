@@ -123,7 +123,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rknboost-windows
+          name: senboost-windows
           path: release/*.exe
           if-no-files-found: error
           retention-days: 7
@@ -189,7 +189,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rknboost-linux
+          name: senboost-linux
           path: |
             release/*.AppImage
             release/*.deb

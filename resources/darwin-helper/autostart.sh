@@ -7,7 +7,7 @@
 # на Windows (`sc config start=`, тоже не трогает работающую службу).
 set -eu
 
-PLIST=/Library/LaunchDaemons/com.rknboost.zapret.plist
+PLIST=/Library/LaunchDaemons/com.senboost.zapret.plist
 
 if [ "$#" -ne 1 ]; then
     echo 'autostart.sh: ожидается 1 аргумент (0 или 1)' >&2

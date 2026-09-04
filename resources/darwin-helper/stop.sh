@@ -11,13 +11,13 @@
 # применяется заново при следующем включении (см. engine.darwin.ts).
 set -eu
 
-LABEL=com.rknboost.zapret
-ANCHOR=com.apple/rknboost
-DEST='/Library/Application Support/RKNboost/zapret'
+LABEL=com.senboost.zapret
+ANCHOR=com.apple/senboost
+DEST='/Library/Application Support/SenBoost/zapret'
 PLIST=/Library/LaunchDaemons/$LABEL.plist
-PIDFILE=/var/run/rknboost-zapret.pid
-TOKEN_FILE=/var/run/rknboost-zapret.pf-token
-KEEPINIT_FILE=/var/db/rknboost-zapret.keepinit
+PIDFILE=/var/run/senboost-zapret.pid
+TOKEN_FILE=/var/run/senboost-zapret.pf-token
+KEEPINIT_FILE=/var/db/senboost-zapret.keepinit
 
 /bin/launchctl disable system/"$LABEL" >/dev/null 2>&1 || true
 /bin/launchctl bootout system/"$LABEL" >/dev/null 2>&1 || true

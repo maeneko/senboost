@@ -43,7 +43,7 @@ export function assertMacosVersion(): void {
  * Linux-`nfqws` здесь не нужен `--qnum` — этот путь специфичен для `#ifdef __linux__`.
  */
 export async function dryRun(configBody: string): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'rknboost-dryrun-'))
+  const dir = await mkdtemp(join(tmpdir(), 'senboost-dryrun-'))
   const configPath = join(dir, 'dry-run.cfg')
   try {
     await writeFile(configPath, configBody, 'utf8')
@@ -71,7 +71,7 @@ export interface StartUtunwsOptions {
  * выключение обхода (см. `runPrivileged()`/`resources/darwin-helper/install.sh`).
  */
 export async function startUtunws(options: StartUtunwsOptions): Promise<void> {
-  const dir = await mkdtemp(join(tmpdir(), 'rknboost-strategy-'))
+  const dir = await mkdtemp(join(tmpdir(), 'senboost-strategy-'))
   const configPath = join(dir, 'strategy.cfg')
   try {
     await writeFile(configPath, options.configBody, 'utf8')

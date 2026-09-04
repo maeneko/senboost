@@ -86,10 +86,10 @@ function quoteConfigArg(arg: string): string {
  */
 function configMarker(strategyId: string, body: string): string {
   const hash = createHash('sha256').update(body).digest('hex').slice(0, 12)
-  return `--comment=rknboost:${strategyId}:${hash}`
+  return `--comment=senboost:${strategyId}:${hash}`
 }
 
-const MARKER_PATTERN = /^--comment=rknboost:([^:]+):/
+const MARKER_PATTERN = /^--comment=senboost:([^:]+):/
 
 /**
  * Обратная операция к `configMarker()` — достаёт id стратегии из первой строки уже
@@ -140,7 +140,7 @@ export interface PacketEngineConfig extends EngineConfig {
 
 /**
  * На Windows `--wf-tcp`/`--wf-udp` — это фильтр самого WinDivert, зашитый в те же аргументы
- * winws. На Linux и macOS фильтрацию делает внешний слой — nftables (`rknboost-helper.sh`)
+ * winws. На Linux и macOS фильтрацию делает внешний слой — nftables (`senboost-helper.sh`)
  * и pf (`resources/darwin-helper/daemon.sh`) соответственно, — а сам движок (nfqws/utunws)
  * эти два аргумента не понимает: вырезаем их и отдаём отдельно вызывающей стороне.
  */
@@ -167,7 +167,7 @@ export function packetEngineConfig(strategyId: string): PacketEngineConfig {
     throw new Error(`Стратегия «${strategyId}»: не найден --wf-tcp/--wf-udp в аргументах.`)
   }
 
-  // Значение уходит прямо в правило nftables (rknboost-helper.sh) или pf (daemon.sh) без
+  // Значение уходит прямо в правило nftables (senboost-helper.sh) или pf (daemon.sh) без
   // дополнительного экранирования — только цифры, запятые и дефисы диапазонов. Если Flowseal
   // когда-нибудь передаст что-то ещё (например, `~` — отрицание порта), лучше явная ошибка
   // тут, чем нераспознанный текст в командной строке nft/pfctl, которую выполняет root.
