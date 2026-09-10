@@ -13,6 +13,9 @@ const TASK_NAME = 'SenBoost Autostart'
  * (`app.setLoginItemSettings`): exe собран с `requestedExecutionLevel: requireAdministrator`
  * (см. electron-builder.yml), а UAC при входе в систему не спрашивают — приложение из ключа
  * реестра просто не запустилось бы. Задача с `/RL HIGHEST` поднимает его с правами сразу.
+ *
+ * Сама по себе из интерфейса не переключается: её ставит и снимает `followZapretAutoStart`
+ * (`app-autostart.ts`) вслед за автозапуском службы обхода.
  */
 function taskCommand(): string {
   // В dev первым аргументом electron.exe нужен каталог приложения, в сборке — нет.

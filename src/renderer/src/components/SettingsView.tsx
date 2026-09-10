@@ -8,7 +8,8 @@ import { LIST_TITLES } from '../lib/zapretListMeta'
 import ListEditor from './ListEditor'
 
 /**
- * Настройки: списки сайтов + автозапуск (macOS/Windows). Выбор стратегии и проверка
+ * Настройки: списки сайтов + автозапуск (macOS/Windows; на Windows одна кнопка на службу
+ * и приложение в трее). Выбор стратегии и проверка
  * соединения переехали на главный экран (ZapretCard.tsx) — рядом с кнопкой
  * включения, где ими и пользуются. Отдельный экран за шестерёнкой в шапке.
  */
@@ -72,33 +73,40 @@ export default function SettingsView({
               {background.settings.closeToTray ? 'Включено' : 'Выключено'}
             </span>
           </button>
-          <button
-            type="button"
-            className="settings-row"
-            disabled={background.busy}
-            onClick={() =>
-              void background.save({ launchAtLogin: !background.settings?.launchAtLogin })
-            }
-          >
-            <span>Запускать приложение вместе с системой</span>
-            <span
-              className={`chip ${background.settings.launchAtLogin ? 'chip--success' : 'chip--neutral'}`}
+          {/* На Windows автозапуск приложения идёт в комплекте с автозапуском службы —
+              одна кнопка ниже (см. followZapretAutoStart в main). */}
+          {!isWindows && (
+            <button
+              type="button"
+              className="settings-row"
+              disabled={background.busy}
+              onClick={() =>
+                void background.save({ launchAtLogin: !background.settings?.launchAtLogin })
+              }
             >
-              {background.settings.launchAtLogin ? 'Включён' : 'Выключен'}
-            </span>
-          </button>
+              <span>Запускать приложение вместе с системой</span>
+              <span
+                className={`chip ${background.settings.launchAtLogin ? 'chip--success' : 'chip--neutral'}`}
+              >
+                {background.settings.launchAtLogin ? 'Включён' : 'Выключен'}
+              </span>
+            </button>
+          )}
           {background.error && <p className="list-editor__error">{background.error}</p>}
           <p className="list-editor__hint">
-            Приложение открывается свёрнутым в трей и обход можно включить одним кликом по значку.
-            Это не то же самое, что автозапуск обхода ниже: тот работает вообще без запущенного
-            приложения.
+            {isWindows
+              ? 'Закрытое окно прячется в трей, обход продолжает работать. Включить и ' +
+                'выключить его можно одним кликом по значку.'
+              : 'Приложение открывается свёрнутым в трей и обход можно включить одним кликом ' +
+                'по значку. Это не то же самое, что автозапуск обхода ниже: тот работает ' +
+                'вообще без запущенного приложения.'}
           </p>
         </div>
       )}
 
       {supportsAutoStart && (
         <div className="settings__group">
-          <span className="settings__label">Автозапуск обхода</span>
+          <span className="settings__label">{isWindows ? 'Автозапуск' : 'Автозапуск обхода'}</span>
           <button
             type="button"
             className="settings-row"
@@ -111,9 +119,10 @@ export default function SettingsView({
           </button>
           <p className="list-editor__hint">
             {isWindows
-              ? 'Меняется через запрос прав администратора. Если выключить обход кнопкой на ' +
-                'главном экране, при включённом автозапуске он вернётся не раньше следующей ' +
-                'перезагрузки.'
+              ? 'Обход включается при загрузке Windows, а SenBoost открывается свёрнутым в ' +
+                'трей, без окна. Меняется через запрос прав администратора. Если выключить ' +
+                'обход кнопкой на главном экране, при включённом автозапуске он вернётся ' +
+                'не раньше следующей перезагрузки.'
               : 'Меняется через пароль администратора. Действует, пока обход включён: ' +
                 'выключение кнопкой на главном экране полностью снимает установку — ' +
                 'автозапуск снова понадобится включить вместе с обходом.'}

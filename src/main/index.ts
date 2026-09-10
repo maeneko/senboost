@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { shouldStartHidden } from './app-autostart'
+import { followZapretAutoStart, shouldStartHidden } from './app-autostart'
 import { beginQuit, createWindow, showMainWindow } from './window'
 import { showFirstRunSupportDialog } from './first-run'
 import { registerIpcHandlers } from './ipc'
@@ -61,6 +61,7 @@ if (elevatedTask) {
     // На macOS чинит прокси, оставшийся от аварийно завершённого прошлого запуска,
     // до того как окно вообще откроется.
     void recoverZapret().then(() => {
+      followZapretAutoStart()
       const window = createWindow({ show: !startHidden })
       // Ждём первого кадра: диалог должен появиться поверх готового окна, а не пустого.
       // Свёрнутому в трей приложению показывать модальное окно некуда — пользователь его

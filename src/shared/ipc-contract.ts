@@ -28,7 +28,10 @@ export interface ThemeState {
 export interface BackgroundSettings {
   /** Закрытие окна прячет его в трей, а не завершает приложение. */
   closeToTray: boolean
-  /** Приложение запускается вместе с системой, сразу свёрнутым в трей. */
+  /**
+   * Приложение запускается вместе с системой, сразу свёрнутым в трей. На Windows только
+   * для чтения: следует за `ZapretStatus.autoStart` (см. `followZapretAutoStart`).
+   */
   launchAtLogin: boolean
   /**
    * Иконка в трее реально создалась. На Linux без AppIndicator трея нет — тогда прятать
@@ -149,7 +152,10 @@ export interface IpcHandlers {
    * nftables (потребуется пароль через pkexec).
    */
   'zapret:set-strategy': (strategyId: string) => ZapretStatus
-  /** macOS/Windows: автозапуск с системой; требует пароль администратора/UAC. */
+  /**
+   * macOS/Windows: автозапуск с системой; требует пароль администратора/UAC. На Windows
+   * вместе со службой при входе поднимается и приложение, свёрнутым в трей.
+   */
   'zapret:set-autostart': (enabled: boolean) => ZapretStatus
 
   'zapret:lists': () => ZapretList[]
